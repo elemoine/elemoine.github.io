@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+        <meta charset="utf-8" />
+        <title>Fanstatic</title>
+        <link rel="stylesheet" href="https://erilem.net/theme/css/main.css" />
+        <link href="https://erilem.net/feeds/all.atom.xml" type="application/atom+xml" rel="alternate" title="Éric Lemoine Atom Feed" />
+</head>
+
+<body id="index" class="home">
+        <header id="banner" class="body">
+                <h1><a href="https://erilem.net/">Éric Lemoine </a></h1>
+                <nav><ul>
+                    <li><a href="https://erilem.net/cv/cv.en.html">Resume</a></li>
+                    <li><a href="https://erilem.net/pages/hacking.html">Hacking</a></li>
+                    <li class="active"><a href="https://erilem.net/category/blog.html">Blog</a></li>
+                </ul></nav>
+        </header><!-- /#banner -->
+<section id="content" class="body">
+  <article>
+    <header>
+      <h1 class="entry-title">
+        <a href="https://erilem.net/fanstatic.html" rel="bookmark"
+           title="Permalink to Fanstatic">Fanstatic</a></h1>
+    </header>
+
+    <div class="entry-content">
+<footer class="post-info">
+        <abbr class="published" title="2011-10-15T21:08:00+02:00">
+                Published: Sat 15 October 2011
+        </abbr>
+
+        <address class="vcard author">
+                By                         <a class="url fn" href="https://erilem.net/author/erilem.html">Erilem</a>
+        </address>
+<p>In <a href="https://erilem.net/category/blog.html">Blog</a>.</p>
+
+</footer><!-- /.post-info -->      <p>A Pyramid-based framework we work on at Camptocamp uses
+<a class="reference external" href="http://docs.formalchemy.org/pyramid_formalchemy/">pyramid_formalchemy</a> and its companion module, <a class="reference external" href="http://www.gawel.org/docs/fa.jquery/">fa.jquery</a>. The
+latter relies on <a class="reference external" href="http://www.fanstatic.org">Fanstatic</a>.</p>
+<p>Fanstatic is basically a WSGI middleware that can inject script and link
+tags in HTML pages, produced deeper in the WSGI stack. Any WSGI
+application or middleware wrapped by a Fanstatic middleware can call
+<tt class="docutils literal">need()</tt> on Fanstatic resources to instruct Fanstatic to inject script
+or link tags for these resources. Fanstatic is simple, easy to use, and
+well documented.</p>
+<p>But I've been wondering what you can do with Fanstatic that you can't
+with <a class="reference external" href="http://www.makotemplates.org/">Mako</a> or any other template engine. With Fanstatic you can insert
+scripts and styles based on some request-dependent conditions. You can
+also have a single place in the code where resources are inserted,
+thereby avoiding duplications in the HTML files composing your web site.
+But these are things you can also do with a template engine. One of the
+goals of template engines is indeed to avoid duplicating (HTML) code, by
+placing common code in template pieces, and having the template engine
+put them together to form the actual HTML page.</p>
+<p>I actually see one case where Fanstatic could be particularly useful:
+one needs to extend/decorate pages that you don't create yourself,
+because they're produced by a library you rely on. (fa.jquery is one of
+these libraries.) With Fanstatic you can let the library create the
+page, and have Fanstatic inject scripts and styles in the page for you.
+But, if the lib doesn't use Fanstatic for inserting its own scripts and
+styles you won't be able to control where Fanstatic will insert your
+scripts and styles - Fanstatic will insert them either at the very top
+or at the very bottom of the page, which can be a problem. Fanstatic
+could provide options to give the application developer more control on
+where resources are inserted, but it would never provide the needed
+flexibility. If the lib you rely on uses Fanstatic you can create
+Fanstatic resources that depend on the lib's resources, and thereby have
+Fanstatic inject resources in the desired order.</p>
+<p>As a conclusion I still have some doubts about the actual usefullness of
+Fanstatic, but they're mitigated by the aforementioned &quot;uncontrolled
+pages&quot; case. And I may discover other use cases as I go.</p>
+
+    </div><!-- /.entry-content -->
+    <div class="comments">
+      <h2>Comments !</h2>
+      <div id="disqus_thread"></div>
+      <script type="text/javascript">
+        var disqus_shortname = 'erilem';
+        var disqus_identifier = 'fanstatic.html';
+        var disqus_url = 'https://erilem.net/fanstatic.html';
+        (function() {
+        var dsq = document.createElement('script'); dsq.type = 'text/javascript'; dsq.async = true;
+        dsq.src = '//erilem.disqus.com/embed.js';
+        (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
+        })();
+      </script>
+      <noscript>Please enable JavaScript to view the comments.</noscript>
+    </div>
+
+  </article>
+</section>
+        <section id="extras" class="body">
+                <div class="social">
+                        <h2>social</h2>
+                        <ul>
+                            <li><a href="https://erilem.net/feeds/all.atom.xml" type="application/atom+xml" rel="alternate">atom feed</a></li>
+
+                            <li><a href="httsp://twitter.com/erilem">Twitter</a></li>
+                            <li><a href="https://github.com/elemoine">GitHub</a></li>
+                            <li><a href="https://plus.google.com/u/1/101823398102994275785">Google+</a></li>
+                            <li><a href="https://www.linkedin.com/in/erilem">Linkedin</a></li>
+                        </ul>
+                </div><!-- /.social -->
+        </section><!-- /#extras -->
+
+        <footer id="contentinfo" class="body">
+                <address id="about" class="vcard body">
+                Proudly powered by <a href="http://getpelican.com/">Pelican</a>, which takes great advantage of <a href="http://python.org">Python</a>.
+                </address><!-- /#about -->
+
+                <p>The theme is by <a href="http://coding.smashingmagazine.com/2009/08/04/designing-a-html-5-layout-from-scratch/">Smashing Magazine</a>, thanks!</p>
+        </footer><!-- /#contentinfo -->
+
+<script type="text/javascript">
+    var disqus_shortname = 'erilem';
+    (function () {
+        var s = document.createElement('script'); s.async = true;
+        s.type = 'text/javascript';
+        s.src = 'https://' + disqus_shortname + '.disqus.com/count.js';
+        (document.getElementsByTagName('HEAD')[0] || document.getElementsByTagName('BODY')[0]).appendChild(s);
+    }());
+</script>
+</body>
+</html>

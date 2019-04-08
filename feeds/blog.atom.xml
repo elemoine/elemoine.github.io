@@ -1,0 +1,1484 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom"><title>Éric Lemoine - Blog</title><link href="https://erilem.net/" rel="alternate"></link><link href="https://erilem.net/feeds/blog.atom.xml" rel="self"></link><id>https://erilem.net/</id><updated>2018-06-05T20:40:00+02:00</updated><entry><title>PostgreSQL Training</title><link href="https://erilem.net/postgresql-training.html" rel="alternate"></link><published>2018-06-05T20:40:00+02:00</published><updated>2018-06-05T20:40:00+02:00</updated><author><name>Erilem</name></author><id>tag:erilem.net,2018-06-05:/postgresql-training.html</id><summary type="html">&lt;p&gt;I just attended a 3-day training on PostgreSQL&amp;nbsp;Administration. The training was given by Thibaud
+Walkowiak, from &lt;a class="reference external" href="https://www.dalibo.com"&gt;Dalibo&lt;/a&gt;. I've been using PostgreSQL for years, mainly for
+GIS-related stuff with PostGIS. And I wanted to know more about its internals and
+administration. This training's been an excellent opportunity for that!&lt;/p&gt;
+&lt;p&gt;The …&lt;/p&gt;</summary><content type="html">&lt;p&gt;I just attended a 3-day training on PostgreSQL&amp;nbsp;Administration. The training was given by Thibaud
+Walkowiak, from &lt;a class="reference external" href="https://www.dalibo.com"&gt;Dalibo&lt;/a&gt;. I've been using PostgreSQL for years, mainly for
+GIS-related stuff with PostGIS. And I wanted to know more about its internals and
+administration. This training's been an excellent opportunity for that!&lt;/p&gt;
+&lt;p&gt;The training covered a lot of topics. My favorite were PostgreSQL's Journaling system, PITR
+(Point-In-Time Recovery) system, and MVCC (Multi-Version Concurrency Control) implementation. I like
+systems (in the broad sense), and these topics are very much system-oriented. Along the way, I've
+also learned a few psql tricks, plus system extensions, views and functions that can be very useful
+for diagnosing and troubleshooting problems.&lt;/p&gt;
+&lt;p&gt;In this blog post I am going to summarize on the things I learned about Journaling, PITR, and MVCC,
+providing links to doc pages and articles I've found useful and interesting as I tried to gather
+more information and understanding on these exciting topics.&lt;/p&gt;
+&lt;div class="section" id="journaling"&gt;
+&lt;h2&gt;Journaling&lt;/h2&gt;
+&lt;p&gt;PostgreSQL's Journaling system, a.k.a. WAL (Write-Ahead Logging), is what guarantees the integrity
+of the data, the durability of operations, while enabling high peformance to database users.&lt;/p&gt;
+&lt;p&gt;This is how I'd summarize the functioning of Journaling in a few sentences: on a transaction commit
+data changes are recorded into the journal, and the data itself is written into PostgreSQL's memory
+(in the &lt;em&gt;shared buffers&lt;/em&gt;) without actually being flushed to disk. The flushing of &amp;quot;dirty&amp;quot; buffers is
+done at a later time by PostgreSQL&amp;nbsp;system processes, namely the Background Writer and the
+Checkpointer (explaining the differences between the two is beyond the scope of this post). Now, in
+the event of a crash, the database can be recovered by replaying the operations recorded in the
+journal.&lt;/p&gt;
+&lt;p&gt;What's really really cool is that WAL is the basis for other cool features such as on-line backup,
+point-in-time recovery and replication! The Postgres project is indeed really good at building
+things in a gradual manner, with the low-level stuff being built first, and providing the foundation
+for higher-level features.&lt;/p&gt;
+&lt;p&gt;With the hands-on exercises I discovered the &lt;tt class="docutils literal"&gt;pg_buffercache&lt;/tt&gt; extension. This extension allows
+getting information about all the blocks of the PostgreSQL&amp;nbsp;instance's &lt;em&gt;shared buffers&lt;/em&gt; memory. It
+tells about what objects use the blocks, what blocks are dirty, etc. For example here's a query
+that returns the 5 objects that use the most memory:&lt;/p&gt;
+&lt;pre class="literal-block"&gt;
+SELECT c.relname,
+           c.relkind,
+           count(*) AS buffers,
+           pg_size_pretty(count(*)*8192) as mem_size
+FROM   pg_buffercache b
+INNER JOIN pg_class c
+          ON b.relfilenode = pg_relation_filenode(c.oid)
+                AND b.reldatabase IN (0, (SELECT oid FROM pg_database
+                                                                  WHERE datname = current_database()))
+GROUP BY c.relname, c.relkind
+ORDER BY 3 DESC
+LIMIT 5 ;
+&lt;/pre&gt;
+&lt;p&gt;To go further:&lt;/p&gt;
+&lt;ul class="simple"&gt;
+&lt;li&gt;&lt;a class="reference external" href="https://www.postgresql.org/docs/current/static/wal.html"&gt;Official PostgreSQL WAL documentation&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/div&gt;
+&lt;div class="section" id="point-in-time-recovery"&gt;
+&lt;h2&gt;Point-In-Time Recovery&lt;/h2&gt;
+&lt;p&gt;PITR is a way to back up PostgreSQL&amp;nbsp;databases. As opposed to traditional backup strategies based on
+&lt;tt class="docutils literal"&gt;pg_dump&lt;/tt&gt; or similar the backup process is done continuously, greatly narrowing the data loss
+window. PITR also operates without shutting down the PostgreSQL&amp;nbsp;instance, and with close to zero
+impact on the database users.&lt;/p&gt;
+&lt;p&gt;PITR is based on the journaling system. The journals are archived in a safe location, and in the
+event of a bad operation or a data loss on the PostgreSQL&amp;nbsp;system the data can be recovered by
+replaying the journal operations on top of a previous image of the data files. The recovery
+can be done up to a certain point in time, hence the name PITR.&lt;/p&gt;
+&lt;p&gt;PITR involves two operations: the archiving of WAL files, and the copying of the data files for the
+creation of &amp;quot;images&amp;quot; onto which journal operations can be replayed. For the archiving of WAL files
+one can rely on the &lt;tt class="docutils literal"&gt;archive_command&lt;/tt&gt; (push model) or on the &lt;tt class="docutils literal"&gt;pg_receivewal&lt;/tt&gt; command (pull
+model). For the copying of the data files there's also two options. One can rely on the
+&lt;tt class="docutils literal"&gt;pg_start_backup&lt;/tt&gt; and &lt;tt class="docutils literal"&gt;pg_stop_backup&lt;/tt&gt; functions, and use her own tool for the actual
+copying of the data files. Or the &lt;tt class="docutils literal"&gt;pg_basebackup&lt;/tt&gt; tool can be used.&lt;/p&gt;
+&lt;p&gt;I see PITR as very good way to achieve backups, when minimizing the data loss window is a key
+element. Using PITR is certainly more involved than just using &lt;tt class="docutils literal"&gt;pg_dump&lt;/tt&gt; and &lt;tt class="docutils literal"&gt;pg_restore&lt;/tt&gt;, but
+setting it up is not that complex really. Plus there are good tools such &lt;em&gt;Barman&lt;/em&gt;, &lt;em&gt;pitrery&lt;/em&gt;, and
+&lt;em&gt;pgBackRest&lt;/em&gt; that simplify and streamline the PITR process. I'd definitely consider those tools
+next time I need to set up PostgreSQL database backups.&lt;/p&gt;
+&lt;p&gt;To go further:&lt;/p&gt;
+&lt;ul class="simple"&gt;
+&lt;li&gt;&lt;a class="reference external" href="https://www.postgresql.org/docs/current/static/continuous-archiving.html"&gt;Official PostgreSQL PITR documentation&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a class="reference external" href="https://www.pgbarman.org/documentation/"&gt;Barman&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a class="reference external" href="https://dalibo.github.io/pitrery/"&gt;pitrery&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a class="reference external" href="https://pgbackrest.org/"&gt;pgBackRest&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/div&gt;
+&lt;div class="section" id="mvcc"&gt;
+&lt;h2&gt;MVCC&lt;/h2&gt;
+&lt;p&gt;MVCC means « Multi-Version Concurrency Control&amp;nbsp;». It is the model used by PostgreSQL for
+handling data changes and transactions.&lt;/p&gt;
+&lt;p&gt;Basically, in a PostgreSQL table, a record can be stored in multiple versions. A change to an
+existing record leads to the creation of a new version of that record. Similarly the deletion of
+a record leads to the creation of a new version of the record. With this mechanism transactions can
+see different versions of records, which is precisely what transactions are about.&lt;/p&gt;
+&lt;p&gt;Related to MVCC&amp;nbsp;and the transaction isolation levels are the &lt;tt class="docutils literal"&gt;xmin&lt;/tt&gt; and &lt;tt class="docutils literal"&gt;xmax&lt;/tt&gt; system columns.
+For example, let's assume you have a table named &lt;tt class="docutils literal"&gt;t&lt;/tt&gt; with columns &lt;tt class="docutils literal"&gt;c1&lt;/tt&gt; and &lt;tt class="docutils literal"&gt;c2&lt;/tt&gt;. In addition
+to &lt;tt class="docutils literal"&gt;c1&lt;/tt&gt; and &lt;tt class="docutils literal"&gt;c2&lt;/tt&gt; you can select the &lt;tt class="docutils literal"&gt;xmin&lt;/tt&gt; and &lt;tt class="docutils literal"&gt;xmax&lt;/tt&gt; columns. For example:&lt;/p&gt;
+&lt;pre class="literal-block"&gt;
+# select xmin, xmax, * from t;
+ xmin | xmax | c1 | c2
+------+------+----+---
+ 1105 |    0 | 1  |  1
+ 1105 |    0 | 2  |  2
+ 1105 |    0 | 3  |  3
+(3 rows)
+&lt;/pre&gt;
+&lt;p&gt;&lt;tt class="docutils literal"&gt;xmin&lt;/tt&gt; is the id of the transaction that created the record. &lt;tt class="docutils literal"&gt;xmax&lt;/tt&gt; is the id of the transaction
+that deleted the record. For example if a transaction is being deleting a record you will see this
+in another transaction:&lt;/p&gt;
+&lt;pre class="literal-block"&gt;
+# select xmin, xmax, * from t;
+ xmin | xmax | c1 | c2
+------+------+----+----
+ 1105 | 1106 |  1 |  1
+ 1105 |    0 |  2 |  2
+ 1105 |    0 |  3 |  3
+(3 rows)
+&lt;/pre&gt;
+&lt;p&gt;Here are two rules that always apply:&lt;/p&gt;
+&lt;ul class="simple"&gt;
+&lt;li&gt;Records with &lt;tt class="docutils literal"&gt;xmin&lt;/tt&gt; smaller than the id of the current transaction are visible to the
+current transaction if the &lt;tt class="docutils literal"&gt;xmin&lt;/tt&gt; transaction was committed.&lt;/li&gt;
+&lt;li&gt;Records with &lt;tt class="docutils literal"&gt;xmax&lt;/tt&gt; smaller that the id of the current transaction are not visible to
+the current transaction if the &lt;tt class="docutils literal"&gt;xmax&lt;/tt&gt; transaction was committed.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;The other cases depend on the isolation level used in the transactions.&lt;/p&gt;
+&lt;p&gt;Another thing closely related to MVCC is &lt;tt class="docutils literal"&gt;VACUUM&lt;/tt&gt;. MVCC and the creation of new record versions
+imply that mechanisms exist to clean up &amp;quot;dead&amp;quot; records. A record is dead if it has a &lt;tt class="docutils literal"&gt;xmax&lt;/tt&gt; that
+corresponds to a transaction that was committed or rolled back, and that there's no ongoing
+transaction using that record. In old versions of PostgreSQL&amp;nbsp;the administrator was responsible
+for setting up periodic VACUUM jobs. The PostgreSQL&amp;nbsp;versions that everyone uses nowadays include
+an &lt;tt class="docutils literal"&gt;autovacuum&lt;/tt&gt; process that takes care of these periodic VACUUM operations.&lt;/p&gt;
+&lt;p&gt;To go further:&lt;/p&gt;
+&lt;ul class="simple"&gt;
+&lt;li&gt;&lt;a class="reference external" href="https://www.postgresql.org/docs/current/static/transaction-iso.html"&gt;Official PostgreSQL Transaction Isolation documentation&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a class="reference external" href="https://www.postgresql.org/docs/current/static/ddl-system-columns.html"&gt;Official PostgreSQL System Columns documentation&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a class="reference external" href="http://rhaas.blogspot.com/2017/12/mvcc-and-vacuum.html"&gt;How VACUUM works&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a class="reference external" href="http://rhaas.blogspot.com/2018/01/the-state-of-vacuum.html"&gt;The State of VACUUM&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a class="reference external" href="https://begriffs.com/posts/2017-08-01-practical-guide-sql-isolation.html"&gt;A Practical Guide to SQL Transaction Isolation&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/div&gt;
+&lt;div class="section" id="some-conclusion"&gt;
+&lt;h2&gt;Some conclusion&lt;/h2&gt;
+&lt;p&gt;The notes in this blog post just touches the surface of the topics discussed. They also certainly
+take shortcuts. What I love about PostgreSQL&amp;nbsp;is its transparency. In particular the excellent
+documentation is very transparent on the way PostgreSQL works internally. For example the
+&lt;a class="reference external" href="https://github.com/pgpointcloud/pointcloud"&gt;Pointcloud extension&lt;/a&gt; I work on defines types that
+support the &lt;tt class="docutils literal"&gt;TOAST&lt;/tt&gt; interface, and I've found &lt;a class="reference external" href="https://www.postgresql.org/docs/current/static/storage-toast.html"&gt;the TOAST doc&lt;/a&gt; very clear and informative!&lt;/p&gt;
+&lt;p&gt;Keep up the good work PostgreSQL! We love you!&lt;/p&gt;
+&lt;/div&gt;
+</content><category term="PostgreSQL"></category><category term="Oslandia"></category></entry><entry><title>Back to GIS</title><link href="https://erilem.net/back-to-gis.html" rel="alternate"></link><published>2017-01-10T19:00:00+01:00</published><updated>2017-01-10T19:00:00+01:00</updated><author><name>Erilem</name></author><id>tag:erilem.net,2017-01-10:/back-to-gis.html</id><summary type="html">&lt;p&gt;I've always been impressed by what Olivier and Vincent have built with
+&lt;a class="reference external" href="http://www.oslandia.com"&gt;Oslandia&lt;/a&gt;. So I am happy and excited to announce
+that I am joining the Oslandia team today!&lt;/p&gt;
+&lt;p&gt;&lt;a class="reference external" href="http://mirantis.com"&gt;Mirantis&lt;/a&gt; was a great experience. I learned many
+things. Some of the technologies I had a chance to use and get …&lt;/p&gt;</summary><content type="html">&lt;p&gt;I've always been impressed by what Olivier and Vincent have built with
+&lt;a class="reference external" href="http://www.oslandia.com"&gt;Oslandia&lt;/a&gt;. So I am happy and excited to announce
+that I am joining the Oslandia team today!&lt;/p&gt;
+&lt;p&gt;&lt;a class="reference external" href="http://mirantis.com"&gt;Mirantis&lt;/a&gt; was a great experience. I learned many
+things. Some of the technologies I had a chance to use and get familiar with
+include OpenStack, Kubernetes, Elasticsearch, InfluxDB, Heka/Hindsight, Salt.
+I even wrote code in Golang and Lua, which I didn't know before. I didn't
+become an expert in any of those technologies, but I now better understand
+OpenStack and container orchestration technologies like Kubernetes, and I've
+gained quite some experience in the fields of logging and monitoring. It was
+also great to be closer to system administration and automation, and get my
+hands dirty with things like Linux networking again. I really enjoyed that.
+I decided to leave Mirantis mainly because of the layoff wave that hit the
+company three months ago.&lt;/p&gt;
+&lt;p&gt;So back to the present: Oslandia! I hope to do great things with the team,
+reusing what I learned in the past at Camptocamp and Mirantis. I also know that
+the work at Oslandia will come with its own challenges. They seem to do really
+complex and scary stuff :) Stay tuned!&lt;/p&gt;
+</content><category term="GIS"></category><category term="Oslandia"></category></entry><entry><title>surveillance:// de Tristan Nitot</title><link href="https://erilem.net/surveillance-de-tristan-nitot.html" rel="alternate"></link><published>2017-01-10T11:30:00+01:00</published><updated>2017-01-10T11:30:00+01:00</updated><author><name>Erilem</name></author><id>tag:erilem.net,2017-01-10:/surveillance-de-tristan-nitot.html</id><summary type="html">&lt;p&gt;Comme beaucoup de libristes j'ai lu le livre &lt;a class="reference external" href="http://standblog.org/blog/pages/Surveillance"&gt;surveillance://&lt;/a&gt; de Tristan Nitot. C'est un bon
+livre, offrant des explications simples, concises et claires, et illustrés
+d'exemples concrets et parlants.&lt;/p&gt;
+&lt;p&gt;Pour faire court le livre nous explique que certains logiciels transmettent nos
+données personnelles à des entreprises, qui peuvent les utiliser …&lt;/p&gt;</summary><content type="html">&lt;p&gt;Comme beaucoup de libristes j'ai lu le livre &lt;a class="reference external" href="http://standblog.org/blog/pages/Surveillance"&gt;surveillance://&lt;/a&gt; de Tristan Nitot. C'est un bon
+livre, offrant des explications simples, concises et claires, et illustrés
+d'exemples concrets et parlants.&lt;/p&gt;
+&lt;p&gt;Pour faire court le livre nous explique que certains logiciels transmettent nos
+données personnelles à des entreprises, qui peuvent les utiliser comme bon leur
+semble. Par exemple, nos données peuvent être utilisées pour connaître nos
+goûts et nous présenter des publicités ciblées. La publicité ciblée n'est qu'un
+exemple, tout un tas d'autres usages (potentiellement néfastes) est imaginable
+et possible. Je suis d'accord que la situation est préoccupante et je remercie
+Tristan de nous en alerter.&lt;/p&gt;
+&lt;p&gt;Dans la partie 3 du livre Tristan nous présente des « principes pour reprendre
+le contrôle » de ses données. L'un de ces principes est « La maîtrise du
+serveur », c'est-à-dire le contrôle des ordinateurs qui exécutent les logiciels
+que nous utilisons. Tristan parle d'« auto-hébergement », qui consiste à
+stocker ses données chez soi plutôt que chez Google, Evernote ou Dropbox.&lt;/p&gt;
+&lt;p&gt;C'est sur ce point que je suis un peu en désaccord avec Tristan.
+L'auto-hébergement est possible pour des experts soucieux de garder le contrôle
+sur les logiciels qu'ils utilisent, mais je pense qu'il n'est pas du tout
+envisageable pour les non-experts. En fait, même les utilisateurs les plus
+avertis utilisent des services comme Gmail et Dropbox pour se simplifier la
+vie, et ne pas avoir à administrer et maintenir leurs propres serveurs. Pour
+être clair, je ne crois pas à l'auto-hébergement comme solution « grand public
+» au problème de confidentialité des données.&lt;/p&gt;
+&lt;p&gt;Je pense que les solutions de type « cloud », où nos données sont stockées sur
+des serveurs distants que d'autres gèrent pour nous, sont là pour durer. Mais
+est-ce que ça implique forcément que les utilisateurs perdent le contrôle de
+leur données ? Je ne crois pas. Dans cette partie 3 Tristan nous parle aussi du
+chiffrement comme « une des pierres angulaires du contrôle de nos données ». Je
+pense que c'est la solution : utiliser des services de type cloud respectueux
+de la vie privée qui chiffrent nos données de bout en bout. Les fournisseurs de
+services, eux-mêmes, ne doivent pas être en mesure de déchiffrer nos données.
+Si de tels services n'existent pas alors il faut les créer. Nous avons besoin
+de service de mail, chat, stockage, partage de document de grande qualité, au
+moins au niveau des Gmail en consorts, qui respectent la vie privée de chacun.&lt;/p&gt;
+&lt;p&gt;Merci Tristan !&lt;/p&gt;
+</content><category term="surveillance"></category></entry><entry><title>Notes on the Austin OpenStack Summit</title><link href="https://erilem.net/notes-on-the-austin-openstack-summit.html" rel="alternate"></link><published>2016-05-16T14:10:00+02:00</published><updated>2016-05-16T14:10:00+02:00</updated><author><name>Erilem</name></author><id>tag:erilem.net,2016-05-16:/notes-on-the-austin-openstack-summit.html</id><summary type="html">&lt;p&gt;Three weeks ago I was in Austin (Texas, USA) for the &amp;quot;Newton&amp;quot; OpenStack summit.
+&amp;quot;Newton&amp;quot; is the name of the next OpenStack release, whose projected release
+date is October 2016. This was my very first OpenStack summit, so I thought it
+would be worth writing a few words about it …&lt;/p&gt;</summary><content type="html">&lt;p&gt;Three weeks ago I was in Austin (Texas, USA) for the &amp;quot;Newton&amp;quot; OpenStack summit.
+&amp;quot;Newton&amp;quot; is the name of the next OpenStack release, whose projected release
+date is October 2016. This was my very first OpenStack summit, so I thought it
+would be worth writing a few words about it.&lt;/p&gt;
+&lt;p&gt;An OpenStack summit is actually mutiple events: the main conference, the ops
+summit and the design summit. The ops summit consists of sessions where people
+share their experience (good or bad) about deploying and operating OpenStack.
+The design summit consists of sessions where people (mostly) OpenStack
+developers discuss new features and issues to be addressed in the coming
+OpenStack release. Both the ops and design are rather informal and
+self-organized. &lt;a class="reference external" href="https://etherpad.openstack.org/p/newton-design-summit-101"&gt;Design Summit 101&lt;/a&gt; provides a good
+overview on how design sessions work. One thing that I've liked a lot is the
+use of an Etherpad document during a session. The session lead displays the
+Etherpad on the projector screen, and people in the room write comments and
+questions while other people speak. This gives everyone a chance to give
+opinions and ask questions.&lt;/p&gt;
+&lt;p&gt;The OpenStack world being new to me, I was in discovery mode, and did a bit of
+everything. I listened to a couple talks from the main conference, and attended
+a number of the ops and design summits. In particular I participated to &lt;a class="reference external" href="https://wiki.openstack.org/wiki/Design_Summit/Newton/Etherpads#Kolla"&gt;Kolla
+sessions&lt;/a&gt;, Kolla
+being a project I had a chance to contribute to. Talking about Kolla I also
+gave a talk together with Alicja Kwaśniewska and Michał Jastrzębski about the
+Logging system we implemented in Kolla (&lt;a class="reference external" href="https://www.openstack.org/videos/video/these-arent-the-logs-youre-looking-for"&gt;video&lt;/a&gt;).&lt;/p&gt;
+&lt;p&gt;Overall, it was an interesting experience. I learned quite a lot about
+OpenStack. I also learned about all things I don't know and I need to learn.
+OpenStack is a vast world. And it is not only OpenStack. Containers, Docker,
+Kubernetes are things you could hear at every corner during the summit. The
+most frustrating part for me probably was that I was for the most part
+a spectator of the design summit. If I have a chance to go to another summit
+in the future I hope I'll be able to act more as a contributor.&lt;/p&gt;
+</content><category term="OpenStack"></category></entry><entry><title>Notes on Docker Volumes</title><link href="https://erilem.net/notes-on-docker-volumes.html" rel="alternate"></link><published>2016-01-27T20:40:00+01:00</published><updated>2016-01-27T20:40:00+01:00</updated><author><name>Erilem</name></author><id>tag:erilem.net,2016-01-27:/notes-on-docker-volumes.html</id><summary type="html">&lt;p&gt;Docker is popular because it's approachable and well documented.  These are not
+the only reasons for its popularity, but I think they are key bits.  For
+example, what do you want to use? &lt;a class="reference external" href="http://libvirt.org/sources/virshcmdref/html/sect-create.html"&gt;this&lt;/a&gt; or &lt;a class="reference external" href="https://docs.docker.com/engine/reference/run/"&gt;that&lt;/a&gt;?  libvirt and Docker are not
+comparable technologies, but I think you get the point …&lt;/p&gt;</summary><content type="html">&lt;p&gt;Docker is popular because it's approachable and well documented.  These are not
+the only reasons for its popularity, but I think they are key bits.  For
+example, what do you want to use? &lt;a class="reference external" href="http://libvirt.org/sources/virshcmdref/html/sect-create.html"&gt;this&lt;/a&gt; or &lt;a class="reference external" href="https://docs.docker.com/engine/reference/run/"&gt;that&lt;/a&gt;?  libvirt and Docker are not
+comparable technologies, but I think you get the point.&lt;/p&gt;
+&lt;p&gt;So Docker is easy!?  It's accessible, sexy and using it is immediately
+enjoyable.  But I don't think it's easy, especially when it comes to doing real
+stuff with it.&lt;/p&gt;
+&lt;p&gt;I've had to use Docker Volumes lately.  Again, the Docker documentation does
+a great job at &lt;a class="reference external" href="https://docs.docker.com/v1.8/userguide/dockervolumes/"&gt;documenting&lt;/a&gt; volumes!  But, as
+always, there are interesting subtleties, and important differences between the
+different ways to use volumes.  And determining what type of volumes to use may
+be far from easy!&lt;/p&gt;
+&lt;p&gt;Let's use this simple &lt;tt class="docutils literal"&gt;Dockerfile&lt;/tt&gt;:&lt;/p&gt;
+&lt;pre class="literal-block"&gt;
+FROM debian:latest
+
+RUN useradd user \
+    &amp;amp;&amp;amp; mkdir /foo \
+    &amp;amp;&amp;amp; touch /foo/bar \
+    &amp;amp;&amp;amp; chown -R user:user /foo
+
+CMD ls -lh /foo &amp;amp;&amp;amp; ls -ldh /foo
+
+USER user
+&lt;/pre&gt;
+&lt;p&gt;This &lt;tt class="docutils literal"&gt;Dockerfile&lt;/tt&gt; defines an image whose base is the latest Debian image.  It
+adds a user &lt;tt class="docutils literal"&gt;user&lt;/tt&gt;, a directory &lt;tt class="docutils literal"&gt;/foo&lt;/tt&gt;, a file &lt;tt class="docutils literal"&gt;bar&lt;/tt&gt; in the &lt;tt class="docutils literal"&gt;/foo&lt;/tt&gt;
+directory and change the owner and group of the &lt;tt class="docutils literal"&gt;/foo&lt;/tt&gt; directory and its
+content to &lt;tt class="docutils literal"&gt;user&lt;/tt&gt;.  When the image is run the content of the &lt;tt class="docutils literal"&gt;/foo&lt;/tt&gt;
+directory is displayed, together with information (permissions, owner, group)
+about that content and the directory itself.&lt;/p&gt;
+&lt;p&gt;So let's build the image:&lt;/p&gt;
+&lt;pre class="literal-block"&gt;
+$ docker build -t foo .
+&lt;/pre&gt;
+&lt;p&gt;and run it:&lt;/p&gt;
+&lt;pre class="literal-block"&gt;
+$ docker run --name foo -it foo
+total 0
+-rw-r--r-- 1 user user 0 Jan 27 20:34 bar
+drwxr-xr-x 2 user user 4.0K Jan 27 20:34 /foo
+&lt;/pre&gt;
+&lt;p&gt;The output of &lt;tt class="docutils literal"&gt;docker run&lt;/tt&gt; is as expected.  The &lt;tt class="docutils literal"&gt;/foo&lt;/tt&gt; directory contains
+the &lt;tt class="docutils literal"&gt;bar&lt;/tt&gt; file, and the owner/group of &lt;tt class="docutils literal"&gt;/foo&lt;/tt&gt; and &lt;tt class="docutils literal"&gt;/foo/bar&lt;/tt&gt; is
+&lt;tt class="docutils literal"&gt;user&lt;/tt&gt;/&lt;tt class="docutils literal"&gt;user&lt;/tt&gt;.&lt;/p&gt;
+&lt;p&gt;Our container executed the two &lt;tt class="docutils literal"&gt;ls&lt;/tt&gt; commands and exited.  But it's still
+there.  Run &lt;tt class="docutils literal"&gt;docker ps &lt;span class="pre"&gt;-a&lt;/span&gt;&lt;/tt&gt; to confirm that.&lt;/p&gt;
+&lt;p&gt;So let's remove it before going further:&lt;/p&gt;
+&lt;pre class="literal-block"&gt;
+$ docker rm foo
+foo
+&lt;/pre&gt;
+&lt;p&gt;Now let's run the image again, but using a volume &lt;tt class="docutils literal"&gt;/foo&lt;/tt&gt; this time:&lt;/p&gt;
+&lt;pre class="literal-block"&gt;
+$ docker run --name foo -it -v /foo foo
+total 0
+-rw-r--r-- 1 user user 0 Jan 27 20:34 bar
+drwxr-xr-x 2 user user 4.0K Jan 27 20:51 /foo
+&lt;/pre&gt;
+&lt;p&gt;The output is the same as previously, except that the creation time of the
+&lt;tt class="docutils literal"&gt;/foo&lt;/tt&gt; directory has changed.  Here &lt;tt class="docutils literal"&gt;docker run&lt;/tt&gt; created a new directory
+for the volume, and copied the content of the image's &lt;tt class="docutils literal"&gt;/foo&lt;/tt&gt; directory into
+that volume directory.&lt;/p&gt;
+&lt;p&gt;Let's use &lt;tt class="docutils literal"&gt;docker volume ls&lt;/tt&gt; to list all the existing volumes:&lt;/p&gt;
+&lt;pre class="literal-block"&gt;
+$ docker volume ls
+DRIVER              VOLUME NAME
+local               50de22407faecc7b0ae8cd3329e1c21a97b5f75876242e31d166bc95d24c3f1b
+&lt;/pre&gt;
+&lt;p&gt;Here there is only one existing one, which is the one we just created with the
+previous &lt;tt class="docutils literal"&gt;docker run&lt;/tt&gt; command.&lt;/p&gt;
+&lt;p&gt;To know where the volume directory is the &lt;tt class="docutils literal"&gt;docker volume inspect&lt;/tt&gt; command can
+be used:&lt;/p&gt;
+&lt;pre class="literal-block"&gt;
+$ docker volume inspect -f &amp;quot;{{.Mountpoint}}&amp;quot; 50de22407faecc7b0ae8cd3329e1c21a97b5f75876242e31d166bc95d24c3f1b
+/var/lib/docker/volumes/50de22407faecc7b0ae8cd3329e1c21a97b5f75876242e31d166bc95d24c3f1b/_data
+&lt;/pre&gt;
+&lt;p&gt;On my system (Ubuntu) &lt;tt class="docutils literal"&gt;/var/lib/docker/volumes&lt;/tt&gt; is the directory where Docker
+creates the directory mount points.&lt;/p&gt;
+&lt;p&gt;If we remove the container the volume will persist.  To remove volumes the
+&lt;tt class="docutils literal"&gt;docker volume rm&lt;/tt&gt; command is to be used:&lt;/p&gt;
+&lt;pre class="literal-block"&gt;
+$ docker rm foo  # remove the container first
+$ docker volume rm 50de22407faecc7b0ae8cd3329e1c21a97b5f75876242e31d166bc95d24c3f1b
+&lt;/pre&gt;
+&lt;p&gt;Ok, so far so good, and I guess we haven't encountered anything unexpected.&lt;/p&gt;
+&lt;p&gt;This time, we're going to mount a host directory as a volume (a.k.a. &lt;strong&gt;bind-mount&lt;/strong&gt;):&lt;/p&gt;
+&lt;pre class="literal-block"&gt;
+$ docker run --name foo -it -v /tmp/foo:/foo foo
+total 0
+drwxr-xr-x 2 root root 4.0K Jan 27 21:19 /foo
+&lt;/pre&gt;
+&lt;p&gt;Now the output of the &lt;tt class="docutils literal"&gt;docker run&lt;/tt&gt; command is completely different.  From the
+container's perspective the &lt;tt class="docutils literal"&gt;/foo&lt;/tt&gt; directory is empty, and its owner/group is
+&lt;tt class="docutils literal"&gt;root&lt;/tt&gt;/&lt;tt class="docutils literal"&gt;root&lt;/tt&gt;.&lt;/p&gt;
+&lt;p&gt;Here &lt;tt class="docutils literal"&gt;docker run&lt;/tt&gt; bind-mounts the host directory &lt;tt class="docutils literal"&gt;/tmp/foo&lt;/tt&gt; into the
+container, as &lt;tt class="docutils literal"&gt;/foo&lt;/tt&gt; in the container.  In our case, the directory &lt;tt class="docutils literal"&gt;/foo&lt;/tt&gt;
+exists in the image.  The bind-mount of &lt;tt class="docutils literal"&gt;/tmp/foo&lt;/tt&gt; into &lt;tt class="docutils literal"&gt;/foo&lt;/tt&gt; hides it
+completely, which explains the different output that we obtained this time.&lt;/p&gt;
+&lt;p&gt;Note that when using a bind-mount there's volume/mount point created by Docker.
+Run &lt;tt class="docutils literal"&gt;docker volume ls&lt;/tt&gt; if you need to be convinced:&lt;/p&gt;
+&lt;pre class="literal-block"&gt;
+$ docker volume ls
+&lt;/pre&gt;
+&lt;p&gt;Now we're going to create a &lt;strong&gt;named volume&lt;/strong&gt;:&lt;/p&gt;
+&lt;pre class="literal-block"&gt;
+$ docker run --name foo -it -v foo:/foo foo
+total 0
+drwxr-xr-x 2 root root 4.0K Jan 27 21:35 /foo
+&lt;/pre&gt;
+&lt;p&gt;Named volumes are very similar to normal/standard volumes except that they're
+a bit different.  Note that, as when we used a bind-mount, the named volume
+&lt;tt class="docutils literal"&gt;foo&lt;/tt&gt; has hidden the image's &lt;tt class="docutils literal"&gt;/foo&lt;/tt&gt; directory.  This is why &lt;tt class="docutils literal"&gt;docker run&lt;/tt&gt;
+reports that the &lt;tt class="docutils literal"&gt;/foo&lt;/tt&gt; directory is empty and that its owner/group is
+&lt;tt class="docutils literal"&gt;root&lt;/tt&gt;/&lt;tt class="docutils literal"&gt;root&lt;/tt&gt;.  Named volumes are between standard volumes and bind-mounts.&lt;/p&gt;
+&lt;p&gt;For the last example of this blog post let's create a slightly different
+&lt;tt class="docutils literal"&gt;Dockerfile&lt;/tt&gt;:&lt;/p&gt;
+&lt;pre class="literal-block"&gt;
+FROM debian:latest
+
+RUN useradd user \
+    &amp;amp;&amp;amp; mkdir /foo \
+    &amp;amp;&amp;amp; touch /foo/bar \
+    &amp;amp;&amp;amp; chown -R user:user /foo
+
+VOLUME /foo
+
+CMD ls -lh /foo &amp;amp;&amp;amp; ls -ldh /foo
+
+USER user
+&lt;/pre&gt;
+&lt;p&gt;Note the &lt;tt class="docutils literal"&gt;VOLUME /foo&lt;/tt&gt; line.  In this case &lt;tt class="docutils literal"&gt;docker run&lt;/tt&gt; will create
+a volume even if no volume is specified on the command line:&lt;/p&gt;
+&lt;pre class="literal-block"&gt;
+$ docker run --name foo -it foo
+total 0
+-rw-r--r-- 1 user user 0 Jan 27 20:34 bar
+drwxr-xr-x 2 user user 4.0K Jan 27 21:58 /foo
+
+$ docker volume ls
+DRIVER              VOLUME NAME
+local               7f6cd56e1795ef443d03b32e01ccc672b022ce85a2ff2818072065f10554351c
+&lt;/pre&gt;
+&lt;p&gt;Thanks for reading!&lt;/p&gt;
+</content><category term="Docker"></category></entry><entry><title>From Camptocamp to Mirantis</title><link href="https://erilem.net/from-camptocamp-to-mirantis.html" rel="alternate"></link><published>2015-12-06T21:00:00+01:00</published><updated>2015-12-06T21:00:00+01:00</updated><author><name>Erilem</name></author><id>tag:erilem.net,2015-12-06:/from-camptocamp-to-mirantis.html</id><summary type="html">&lt;p&gt;I joined Camptocamp in 2007. There I quickly became a core developer and
+project member of &lt;a class="reference external" href="http://openlayers.org"&gt;OpenLayers&lt;/a&gt;. I also became a lead
+developer of Camptocamp's «&amp;nbsp;Geospatial Python team&amp;nbsp;». I learned a lot.
+I learned about the Geospatial field, open-source communities, Python
+programming, JavaScript programming, web development, web architectures.
+The list …&lt;/p&gt;</summary><content type="html">&lt;p&gt;I joined Camptocamp in 2007. There I quickly became a core developer and
+project member of &lt;a class="reference external" href="http://openlayers.org"&gt;OpenLayers&lt;/a&gt;. I also became a lead
+developer of Camptocamp's «&amp;nbsp;Geospatial Python team&amp;nbsp;». I learned a lot.
+I learned about the Geospatial field, open-source communities, Python
+programming, JavaScript programming, web development, web architectures.
+The list is not exhaustive.&lt;/p&gt;
+&lt;p&gt;One thing that I love about Camptocamp is that Camptocamp do production. They
+do consulting. They do development. But they also operate machines and run code
+in production. For that the dev teams work together with ops teams, and this
+greatly contributed to making my job very interesting.  I had the chance to
+regularly exchange with ops people, with a common overall objective to build
+applications that actually deploy and run in production.&lt;/p&gt;
+&lt;p&gt;This is also what made me want to change job. My collaboration with
+Camptocamp's ops team exposed me to things like Puppet, Docker, OpenStack, and
+building scalable, resilient and monitored applications. I wanted to know more
+about all this. I wanted to go deeper with all that, to really understand what
+this means and where this is all going.&lt;/p&gt;
+&lt;p&gt;So here I am, working in the Logging, Monitoring and Alerting team at Mirantis.
+I just finished my third week, so the whole business is still very very new to
+me.  But I feel that I've already learned quite a lot; things that I understood
+but were a bit abstract are now getting more palpable. The mission of my team
+is to build an end-to-end monitoring solution for OpenStack that can scale
+to thousands of nodes. I think it's a great mission! We use great technologies
+like Heka, Kafka and influxDB to accomplish our mission.&lt;/p&gt;
+&lt;p&gt;My current specific tasks involve making our Puppet manifests more generic,
+making it possible to deploy our monitoring solution outside the &lt;a class="reference external" href="https://wiki.openstack.org/wiki/Fuel"&gt;Fuel&lt;/a&gt; OpenStack deployment tool, and on any
+OpenStack distribution. Eventually, we will also look at other deployment
+tools, but this is matter for future work. We also have many other things in
+mind for future releases, that I hope I could talk about here in this blog.&lt;/p&gt;
+</content><category term="Camptocamp"></category><category term="Mirantis"></category></entry><entry><title>Deploy Fuel and OpenStack on KVM virtual machines</title><link href="https://erilem.net/deploy-fuel-and-openstack-on-kvm-virtual-machines.html" rel="alternate"></link><published>2015-11-22T20:20:00+01:00</published><updated>2015-11-22T20:20:00+01:00</updated><author><name>Erilem</name></author><id>tag:erilem.net,2015-11-22:/deploy-fuel-and-openstack-on-kvm-virtual-machines.html</id><summary type="html">&lt;p&gt;This post provides the steps to deploy Fuel and OpenStack on KVM virtual
+machines.&lt;/p&gt;
+&lt;p&gt;It is based on the &lt;a class="reference external" href="https://docs.fuel-infra.org/fuel-dev/devops.html"&gt;Fuel devops page&lt;/a&gt; from the official Fuel
+documentation, but uses shortcuts, and relies on &lt;tt class="docutils literal"&gt;virtualenv&lt;/tt&gt; as much as
+posssible (more than the official documentation does).&lt;/p&gt;
+&lt;p&gt;This post is by no means …&lt;/p&gt;</summary><content type="html">&lt;p&gt;This post provides the steps to deploy Fuel and OpenStack on KVM virtual
+machines.&lt;/p&gt;
+&lt;p&gt;It is based on the &lt;a class="reference external" href="https://docs.fuel-infra.org/fuel-dev/devops.html"&gt;Fuel devops page&lt;/a&gt; from the official Fuel
+documentation, but uses shortcuts, and relies on &lt;tt class="docutils literal"&gt;virtualenv&lt;/tt&gt; as much as
+posssible (more than the official documentation does).&lt;/p&gt;
+&lt;p&gt;This post is by no means a replacement for the official documentation. I wrote
+it mainly for me, from notes I took when I set up my development environment
+the very first time. I'll update this post as I discover things about
+&lt;tt class="docutils literal"&gt;&lt;span class="pre"&gt;fuel-devops&lt;/span&gt;&lt;/tt&gt;.&lt;/p&gt;
+&lt;p&gt;Ubuntu 14.04 (Trusty) is assumed.&lt;/p&gt;
+&lt;div class="section" id="install-system-packages"&gt;
+&lt;h2&gt;Install system packages&lt;/h2&gt;
+&lt;p&gt;Run the following command to install the required system packages:&lt;/p&gt;
+&lt;pre class="literal-block"&gt;
+$ sudo apt-get install git postgresql postgresql-server-dev-all \
+    libyaml-dev libffi-dev python-dev qemu-kvm libvirt-bin \
+    libvirt-dev ubuntu-vm-builder bridge-utils \
+    libpq-dev libgmp-dev
+&lt;/pre&gt;
+&lt;p&gt;You will also need to install &lt;tt class="docutils literal"&gt;&lt;span class="pre"&gt;python-pip&lt;/span&gt;&lt;/tt&gt; and &lt;tt class="docutils literal"&gt;&lt;span class="pre"&gt;python-virtuaenv&lt;/span&gt;&lt;/tt&gt; if you
+don't have &lt;tt class="docutils literal"&gt;pip&lt;/tt&gt; and &lt;tt class="docutils literal"&gt;virtualenv&lt;/tt&gt; installed:&lt;/p&gt;
+&lt;pre class="literal-block"&gt;
+$ sudo apt-get install python-pip python-virtualenv
+&lt;/pre&gt;
+&lt;p&gt;Note: I personally install &lt;tt class="docutils literal"&gt;pip&lt;/tt&gt;, &lt;tt class="docutils literal"&gt;virtualenv&lt;/tt&gt; and &lt;tt class="docutils literal"&gt;virtualenvwrapper&lt;/tt&gt; to
+the user site, i.e. in &lt;tt class="docutils literal"&gt;&lt;span class="pre"&gt;~/.local&lt;/span&gt;&lt;/tt&gt;. See my &lt;a class="reference external" href="https://github.com/elemoine/dotfiles/blob/master/Makefile"&gt;dotfiles' Makefile&lt;/a&gt; if you want to
+know how.&lt;/p&gt;
+&lt;/div&gt;
+&lt;div class="section" id="create-virtual-environment"&gt;
+&lt;h2&gt;Create virtual environment&lt;/h2&gt;
+&lt;p&gt;Create a virtual environment:&lt;/p&gt;
+&lt;pre class="literal-block"&gt;
+$ cd /some/path
+$ virtualenv fuel-qa
+&lt;/pre&gt;
+&lt;/div&gt;
+&lt;div class="section" id="configure-libvirt-pool"&gt;
+&lt;h2&gt;Configure &lt;tt class="docutils literal"&gt;libvirt&lt;/tt&gt; pool&lt;/h2&gt;
+&lt;p&gt;Create a &lt;tt class="docutils literal"&gt;libvirt&lt;/tt&gt; persistent pool and start it:&lt;/p&gt;
+&lt;pre class="literal-block"&gt;
+$ sudo virsh pool-define-as --type=dir --name=default --target=/var/lib/libvirt/images
+$ sudo virsh pool-autostart default
+$ sudo virsh pool-start default
+&lt;/pre&gt;
+&lt;p&gt;&lt;tt class="docutils literal"&gt;/var/lib/libvirt/images&lt;/tt&gt; is where QEMU QCOW images will be stored, so make
+sure this directory is attached to a file system with sufficient storage.&lt;/p&gt;
+&lt;p&gt;Make your user a member of the &lt;tt class="docutils literal"&gt;libvirtd&lt;/tt&gt; group:&lt;/p&gt;
+&lt;pre class="literal-block"&gt;
+$ sudo usermod $(whoami) -a -G libvirtd
+&lt;/pre&gt;
+&lt;p&gt;For your user to effectively be a member of &lt;tt class="docutils literal"&gt;libvirt&lt;/tt&gt; you need to create
+a new login session, implying logging out and logging in again.&lt;/p&gt;
+&lt;/div&gt;
+&lt;div class="section" id="create-database-and-database-user"&gt;
+&lt;h2&gt;Create database and database user&lt;/h2&gt;
+&lt;p&gt;Create a database and database user:&lt;/p&gt;
+&lt;pre class="literal-block"&gt;
+$ sudo -u postgres createuser -P fuel_devops  # use &amp;quot;fuel_devops&amp;quot; as the password!
+$ sudo -u postgres createdb fuel_devops -O fuel_devops
+&lt;/pre&gt;
+&lt;/div&gt;
+&lt;div class="section" id="check-that-nested-kvm-is-enabled"&gt;
+&lt;h2&gt;Check that nested KVM is enabled&lt;/h2&gt;
+&lt;p&gt;Check the following:&lt;/p&gt;
+&lt;pre class="literal-block"&gt;
+$ cat /etc/modprobe.d/qemu-system-x86.conf
+options kvm_intel nested=1
+&lt;/pre&gt;
+&lt;p&gt;And:&lt;/p&gt;
+&lt;pre class="literal-block"&gt;
+$ cat /sys/module/kvm_intel/parameters/nested
+Y
+&lt;/pre&gt;
+&lt;/div&gt;
+&lt;div class="section" id="create-environment-using-fuel-qa"&gt;
+&lt;h2&gt;Create environment using &lt;tt class="docutils literal"&gt;&lt;span class="pre"&gt;fuel-qa&lt;/span&gt;&lt;/tt&gt;&lt;/h2&gt;
+&lt;p&gt;Clone the &lt;tt class="docutils literal"&gt;&lt;span class="pre"&gt;fuel-qa&lt;/span&gt;&lt;/tt&gt; repository:&lt;/p&gt;
+&lt;pre class="literal-block"&gt;
+$ git clone https://github.com/openstack/fuel-qa
+$ cd fuel-qa
+$ git checkout e9e6761
+&lt;/pre&gt;
+&lt;p&gt;Note that we use &lt;a class="reference external" href="https://github.com/openstack/fuel-qa/commit/6bcec5b14d43e025021ac5ca3f896ff418660902"&gt;commit e9e6761&lt;/a&gt;
+of &lt;tt class="docutils literal"&gt;&lt;span class="pre"&gt;fuel-qa&lt;/span&gt;&lt;/tt&gt; because more recent commits do not work with Fuel 7. The
+&lt;cite&gt;master&lt;/cite&gt; branch should work if you use Fuel 8 (not released at time of
+this writing).&lt;/p&gt;
+&lt;p&gt;Install requirements in the virtual environment:&lt;/p&gt;
+&lt;pre class="literal-block"&gt;
+$ source /some/path/fuel-qa/bin/activate
+$ pip install -r ./fuelweb_test/requirements.txt
+&lt;/pre&gt;
+&lt;p&gt;This, among other things, will install &lt;tt class="docutils literal"&gt;&lt;span class="pre"&gt;fuel-devops&lt;/span&gt;&lt;/tt&gt; in the virtual
+environment.&lt;/p&gt;
+&lt;p&gt;Now set up the database:&lt;/p&gt;
+&lt;pre class="literal-block"&gt;
+$ django-admin.py syncdb --settings=devops.settings
+$ django-admin.py migrate devops --settings=devops.settings
+&lt;/pre&gt;
+&lt;/div&gt;
+&lt;div class="section" id="download-a-fuel-iso-image"&gt;
+&lt;h2&gt;Download a Fuel ISO image&lt;/h2&gt;
+&lt;p&gt;The current stable version of Fuel is 7.0. The Fuel 7.0 ISO image can be
+downloaded from &lt;a class="reference external" href="http://9f2b43d3ab92f886c3f0-e8d43ffad23ec549234584e5c62a6e24.r60.cf1.rackcdn.com/MirantisOpenStack-7.0.iso"&gt;Rackspace CDN&lt;/a&gt;.
+The image's MD5 sum is &lt;tt class="docutils literal"&gt;4548cc07dcf733d1a7364bf1c978590a&lt;/tt&gt;.&lt;/p&gt;
+&lt;/div&gt;
+&lt;div class="section" id="create-fuel-node"&gt;
+&lt;h2&gt;Create Fuel node&lt;/h2&gt;
+&lt;p&gt;And run this command to create the Fuel node (a.k.a. Fuel master):&lt;/p&gt;
+&lt;pre class="literal-block"&gt;
+$ export NODES_COUNT=5
+$ ./utils/jenkins/system_tests.sh -t test -w $(pwd) -j fuel_test -k -K \
+    -i &amp;lt;path_to_iso&amp;gt; -V &amp;lt;path_to_venv&amp;gt; -e &amp;lt;environment_name&amp;gt; -o \
+    --group=prepare_release
+&lt;/pre&gt;
+&lt;p&gt;&lt;tt class="docutils literal"&gt;&amp;lt;environment_name&amp;gt;&lt;/tt&gt; is the name of your test environment, any name of your
+choice really. But make sure you use the same environment when running
+&lt;tt class="docutils literal"&gt;system_tests.sh&lt;/tt&gt; again to add nodes to the OpenStack cluster.&lt;/p&gt;
+&lt;p&gt;The &lt;tt class="docutils literal"&gt;&lt;span class="pre"&gt;-t&lt;/span&gt;&lt;/tt&gt; and &lt;tt class="docutils literal"&gt;&lt;span class="pre"&gt;-j&lt;/span&gt;&lt;/tt&gt; flags are used to set the task name and job name,
+respectively. Really, these flag make sense when &lt;tt class="docutils literal"&gt;system_tests.sh&lt;/tt&gt; is run
+from Jenkins, which is how the devops team uses the script. In our case any
+value can be used for these flags, and the same values can be used for multiple
+environments.&lt;/p&gt;
+&lt;/div&gt;
+&lt;div class="section" id="create-fuel-slaves"&gt;
+&lt;h2&gt;Create Fuel slaves&lt;/h2&gt;
+&lt;p&gt;Use the following command to create four Fuel slaves (nodes that you will
+install OpenStack on):&lt;/p&gt;
+&lt;pre class="literal-block"&gt;
+$ ./utils/jenkins/system_tests.sh -t test -w $(pwd) -j fuel_test -k -K \
+    -i &amp;lt;path_to_iso&amp;gt; -V &amp;lt;path_to_venv&amp;gt; -e &amp;lt;environment_name&amp;gt; -o \
+    --group=prepare_slaves_5
+&lt;/pre&gt;
+&lt;/div&gt;
+&lt;div class="section" id="connect-to-fuel-interface"&gt;
+&lt;h2&gt;Connect to Fuel interface&lt;/h2&gt;
+&lt;p&gt;You should now have five nodes: a Fuel master node and four Fuel slave
+nodes. You can now open the Fuel UI at &lt;a class="reference external" href="http://10.109.0.2"&gt;http://10.109.0.2&lt;/a&gt; (admin/admin),
+create an environment and deploy OpenStack on the Fuel slave nodes.&lt;/p&gt;
+&lt;/div&gt;
+</content><category term="OpenStack"></category><category term="Fuel"></category><category term="KVM"></category><category term="Mirantis"></category></entry><entry><title>Things learned from "The Hacker's Guide To Python"</title><link href="https://erilem.net/things-learned-from-the-hackers-guide-to-python.html" rel="alternate"></link><published>2015-10-25T10:39:00+01:00</published><updated>2015-10-25T10:39:00+01:00</updated><author><name>Erilem</name></author><id>tag:erilem.net,2015-10-25:/things-learned-from-the-hackers-guide-to-python.html</id><summary type="html">&lt;p&gt;I just finished reading Julien Danjou's &amp;quot;The Hacker's Guide To Python&amp;quot; book,
+which I enjoyed a lot. This blog post is not a book review, just a summary on
+things I learned from the book.&lt;/p&gt;
+&lt;div class="section" id="distribution"&gt;
+&lt;h2&gt;Distribution&lt;/h2&gt;
+&lt;p&gt;The &amp;quot;Distribution&amp;quot; chapter mentions the &lt;a class="reference external" href="http://docs.openstack.org/developer/pbr/"&gt;pbr&lt;/a&gt; tool. &lt;tt class="docutils literal"&gt;pbr&lt;/tt&gt; was inspired by
+&lt;tt class="docutils literal"&gt;distutils2&lt;/tt&gt;, which is …&lt;/p&gt;&lt;/div&gt;</summary><content type="html">&lt;p&gt;I just finished reading Julien Danjou's &amp;quot;The Hacker's Guide To Python&amp;quot; book,
+which I enjoyed a lot. This blog post is not a book review, just a summary on
+things I learned from the book.&lt;/p&gt;
+&lt;div class="section" id="distribution"&gt;
+&lt;h2&gt;Distribution&lt;/h2&gt;
+&lt;p&gt;The &amp;quot;Distribution&amp;quot; chapter mentions the &lt;a class="reference external" href="http://docs.openstack.org/developer/pbr/"&gt;pbr&lt;/a&gt; tool. &lt;tt class="docutils literal"&gt;pbr&lt;/tt&gt; was inspired by
+&lt;tt class="docutils literal"&gt;distutils2&lt;/tt&gt;, which is now abandonned.&lt;/p&gt;
+&lt;p&gt;Using &lt;tt class="docutils literal"&gt;pbr&lt;/tt&gt; the package developer describes the package in a &lt;tt class="docutils literal"&gt;setup.cfg&lt;/tt&gt;
+file and the use the following in &lt;tt class="docutils literal"&gt;setup.py&lt;/tt&gt;:&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;pre&gt;&lt;span&gt;&lt;/span&gt;&lt;span class="kn"&gt;import&lt;/span&gt; &lt;span class="nn"&gt;setuptools&lt;/span&gt;
+
+&lt;span class="n"&gt;setuptools&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;setup&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;setup_requires&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;&lt;span class="p"&gt;[&lt;/span&gt;&lt;span class="s1"&gt;&amp;#39;pbr&amp;#39;&lt;/span&gt;&lt;span class="p"&gt;],&lt;/span&gt; &lt;span class="n"&gt;pbr&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;&lt;span class="bp"&gt;True&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt;
+&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;But &lt;tt class="docutils literal"&gt;pbr&lt;/tt&gt; offers more features than this, including reading dependencies from
+&lt;tt class="docutils literal"&gt;requirements.txt&lt;/tt&gt;,  generating &lt;tt class="docutils literal"&gt;autodoc&lt;/tt&gt; stub files, generating
+&lt;tt class="docutils literal"&gt;AUTHORS&lt;/tt&gt; and &lt;tt class="docutils literal"&gt;ChangeLog&lt;/tt&gt; files from &lt;tt class="docutils literal"&gt;git log&lt;/tt&gt;, reading the
+&lt;tt class="docutils literal"&gt;long_description&lt;/tt&gt; from the project's &lt;tt class="docutils literal"&gt;README&lt;/tt&gt; file, managing version
+numbers based on Git tags and revisions.&lt;/p&gt;
+&lt;p&gt;&lt;tt class="docutils literal"&gt;pbr&lt;/tt&gt; was initially developed inside the OpenStack project, but it sounds
+like it can be useful for other Python projects. I'll consider it in the
+future.&lt;/p&gt;
+&lt;/div&gt;
+&lt;div class="section" id="unit-testing"&gt;
+&lt;h2&gt;Unit Testing&lt;/h2&gt;
+&lt;p&gt;The &amp;quot;Unit Testing&amp;quot; chapter covers well-known test-related tools and libraries
+like &lt;a class="reference external" href="https://docs.python.org/3/library/unittest.html"&gt;unittest&lt;/a&gt; , &lt;a class="reference external" href="https://docs.python.org/dev/library/unittest.mock.html"&gt;mock&lt;/a&gt;, &lt;a class="reference external" href="http://nose.readthedocs.org/en/latest/"&gt;nose&lt;/a&gt;, and &lt;a class="reference external" href="https://pypi.python.org/pypi/fixtures"&gt;fixtures&lt;/a&gt;.  It also covers other interesting
+tools that I didn't know before, namely &lt;a class="reference external" href="https://pypi.python.org/pypi/python-subunit"&gt;subunit&lt;/a&gt; and &lt;a class="reference external" href="http://testrepository.readthedocs.org/en/latest/"&gt;testrepository&lt;/a&gt;.&lt;/p&gt;
+&lt;p&gt;&lt;tt class="docutils literal"&gt;subunit&lt;/tt&gt; is a Python module that provides a streaming protocol for test
+results. Using &lt;tt class="docutils literal"&gt;subunit&lt;/tt&gt; test results may be aggregated from different from
+different machines. Test runs may be recorded and replayed later.&lt;/p&gt;
+&lt;p&gt;The &lt;tt class="docutils literal"&gt;testrepository&lt;/tt&gt; package makes it possible to store a &lt;tt class="docutils literal"&gt;subunit&lt;/tt&gt; stream
+and then manipulate it using the &lt;tt class="docutils literal"&gt;testr&lt;/tt&gt; command. Here is a quick example:&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;pre&gt;&lt;span&gt;&lt;/span&gt;$ &lt;span class="nb"&gt;cd&lt;/span&gt; my_python_package
+$ testr init
+$ touch .testr.conf
+$ python -m subunit.run tests.test_functions &lt;span class="p"&gt;|&lt;/span&gt; testr load
+Ran &lt;span class="m"&gt;4&lt;/span&gt; tests in &lt;span class="m"&gt;0&lt;/span&gt;.002s
+PASSED &lt;span class="o"&gt;(&lt;/span&gt;&lt;span class="nv"&gt;id&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;&lt;span class="m"&gt;0&lt;/span&gt;&lt;span class="o"&gt;)&lt;/span&gt;
+$ testr failing
+PASSED &lt;span class="o"&gt;(&lt;/span&gt;&lt;span class="nv"&gt;id&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;&lt;span class="m"&gt;0&lt;/span&gt;&lt;span class="o"&gt;)&lt;/span&gt;
+$ testr last
+Ran &lt;span class="m"&gt;4&lt;/span&gt; tests in &lt;span class="m"&gt;0&lt;/span&gt;.002s
+PASSED &lt;span class="o"&gt;(&lt;/span&gt;&lt;span class="nv"&gt;id&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;&lt;span class="m"&gt;0&lt;/span&gt;&lt;span class="o"&gt;)&lt;/span&gt;
+$ testr stats
+&lt;span class="nv"&gt;runs&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;&lt;span class="m"&gt;1&lt;/span&gt;
+&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;This only scratches the surface of what can be done with &lt;tt class="docutils literal"&gt;subunit&lt;/tt&gt; and
+&lt;tt class="docutils literal"&gt;testrepository&lt;/tt&gt;. For example &lt;tt class="docutils literal"&gt;testrepository&lt;/tt&gt; has support for running
+tests in parallel, in isolated environments such as chroots, containers or
+separate machines. I need to do more research to fully understand the
+benefits of using &lt;tt class="docutils literal"&gt;subunit&lt;/tt&gt; and &lt;tt class="docutils literal"&gt;testrepository&lt;/tt&gt;.&lt;/p&gt;
+&lt;/div&gt;
+&lt;div class="section" id="methods-and-decorators"&gt;
+&lt;h2&gt;Methods and decorators&lt;/h2&gt;
+&lt;div class="section" id="bound-unbound-methods"&gt;
+&lt;h3&gt;Bound/Unbound methods&lt;/h3&gt;
+&lt;p&gt;The &amp;quot;Methods and decorators&amp;quot; chapter of the book includes a section explaining
+&amp;quot;how methods work in Python&amp;quot;.&lt;/p&gt;
+&lt;p&gt;I've learned from this section that, in contrast to Python 2, Python 3 allows
+passing any object to an &lt;em&gt;unbound&lt;/em&gt; method. Let's consider this simple class for
+example:&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;pre&gt;&lt;span&gt;&lt;/span&gt;&lt;span class="k"&gt;class&lt;/span&gt; &lt;span class="nc"&gt;Python&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nb"&gt;object&lt;/span&gt;&lt;span class="p"&gt;):&lt;/span&gt;
+    &lt;span class="k"&gt;def&lt;/span&gt; &lt;span class="fm"&gt;__init__&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="bp"&gt;self&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="n"&gt;version&lt;/span&gt;&lt;span class="p"&gt;):&lt;/span&gt;
+        &lt;span class="bp"&gt;self&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;version&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="n"&gt;version&lt;/span&gt;
+    &lt;span class="k"&gt;def&lt;/span&gt; &lt;span class="nf"&gt;get_version&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="bp"&gt;self&lt;/span&gt;&lt;span class="p"&gt;):&lt;/span&gt;
+        &lt;span class="k"&gt;return&lt;/span&gt; &lt;span class="bp"&gt;self&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;version&lt;/span&gt;
+&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;The following works both with Python 2 and 3:&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;pre&gt;&lt;span&gt;&lt;/span&gt;&lt;span class="n"&gt;Python&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;get_version&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;Python&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="mi"&gt;3&lt;/span&gt;&lt;span class="p"&gt;))&lt;/span&gt;
+&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;But the following only works with Python 3:&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;pre&gt;&lt;span&gt;&lt;/span&gt;&lt;span class="kn"&gt;from&lt;/span&gt; &lt;span class="nn"&gt;collections&lt;/span&gt; &lt;span class="kn"&gt;import&lt;/span&gt; &lt;span class="n"&gt;namedtuple&lt;/span&gt;
+&lt;span class="n"&gt;PythonLike&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="n"&gt;namedtuple&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="s1"&gt;&amp;#39;PythonLike&amp;#39;&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="p"&gt;[&lt;/span&gt;&lt;span class="s1"&gt;&amp;#39;version&amp;#39;&lt;/span&gt;&lt;span class="p"&gt;])&lt;/span&gt;
+
+&lt;span class="n"&gt;Python&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;get_version&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;PythonLike&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="mi"&gt;3&lt;/span&gt;&lt;span class="p"&gt;))&lt;/span&gt;
+&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;With Python 2 the (unbound) &lt;tt class="docutils literal"&gt;get_version&lt;/tt&gt; function must be called with
+a &lt;tt class="docutils literal"&gt;Python&lt;/tt&gt; instance as its first argument. While with Python 3 the
+&lt;tt class="docutils literal"&gt;get_version&lt;/tt&gt; function may be called with any object with a &lt;tt class="docutils literal"&gt;version&lt;/tt&gt;
+property. So Python 3 is more permissive and flexible here.&lt;/p&gt;
+&lt;/div&gt;
+&lt;div class="section" id="super-is-your-friend"&gt;
+&lt;h3&gt;&lt;tt class="docutils literal"&gt;super()&lt;/tt&gt; is your friend&lt;/h3&gt;
+&lt;p&gt;The &amp;quot;Methods and decorators&amp;quot; chapter also includes a section &amp;quot;The truth about
+&lt;strong&gt;super&lt;/strong&gt;&amp;quot; that I found… intriguing. So I went back to the roots, and (re-)read
+the official docs for &lt;a class="reference external" href="https://docs.python.org/3/library/functions.html#super"&gt;super()&lt;/a&gt;. The official docs
+include a link to a very informative &lt;a class="reference external" href="https://rhettinger.wordpress.com/2011/05/26/super-considered-super/"&gt;blog post&lt;/a&gt; about
+&lt;tt class="docutils literal"&gt;super()&lt;/tt&gt;. Read that blog post and you'll understand that the type to which
+&lt;tt class="docutils literal"&gt;super()&lt;/tt&gt; delegates is computed at runtime.  This will explain why you should
+always use &lt;tt class="docutils literal"&gt;super()&lt;/tt&gt;.&lt;/p&gt;
+&lt;/div&gt;
+&lt;/div&gt;
+&lt;div class="section" id="the-ast"&gt;
+&lt;h2&gt;The AST&lt;/h2&gt;
+&lt;p&gt;The &amp;quot;The AST&amp;quot; chapter talks about Python's Abstract Syntax Tree, and presents
+the &lt;tt class="docutils literal"&gt;ast&lt;/tt&gt; module, which applications may use to create and process trees of
+the Python abstract syntax grammar.&lt;/p&gt;
+&lt;p&gt;Two practical cases are presented.&lt;/p&gt;
+&lt;p&gt;First the author teaches us how to use &lt;tt class="docutils literal"&gt;ast&lt;/tt&gt; to create an a &lt;a class="reference external" href="https://flake8.readthedocs.org/en/2.4.1/"&gt;flake8&lt;/a&gt; extension. The extension checks
+that each method not decorated with &lt;tt class="docutils literal"&gt;&amp;#64;staticmethod&lt;/tt&gt; has at least of one
+argument, and that the method actually uses its first argument. If the first
+argument is not used then it means that function should be decorated with
+&lt;tt class="docutils literal"&gt;&amp;#64;staticmethod&lt;/tt&gt;. Check out this &lt;a class="reference external" href="https://julien.danjou.info/blog/2015/python-ast-checking-method-declaration"&gt;blog post from Julien&lt;/a&gt;
+if you want to know more about that extension. The blog post covers it all.&lt;/p&gt;
+&lt;p&gt;The other practical case presented is nothing more than the &lt;a class="reference external" href="http://docs.hylang.org/en/latest/language/index.html"&gt;Hy Programming
+Language&lt;/a&gt;. Hy is a Lisp
+dialect that parses a Lisp-like language and converts it to a standard Python
+AST. Hy is very cool! It's a good way for Python developers to discover Lisp.&lt;/p&gt;
+&lt;p&gt;Guess what the following Hy program does:&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;pre&gt;&lt;span&gt;&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nv"&gt;list-comp&lt;/span&gt;
+  &lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="o"&gt;,&lt;/span&gt; &lt;span class="nv"&gt;x&lt;/span&gt; &lt;span class="nv"&gt;y&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt;
+  &lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nv"&gt;x&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nv"&gt;range&lt;/span&gt; &lt;span class="mi"&gt;8&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt;
+   &lt;span class="nv"&gt;y&lt;/span&gt; &lt;span class="s"&gt;&amp;quot;ABCDEFGH&amp;quot;&lt;/span&gt;&lt;span class="p"&gt;))&lt;/span&gt;
+&lt;/pre&gt;&lt;/div&gt;
+&lt;/div&gt;
+&lt;div class="section" id="performances-and-optimizations"&gt;
+&lt;h2&gt;Performances and optimizations&lt;/h2&gt;
+&lt;p&gt;The &amp;quot;Performance and optimizations&amp;quot; chapter includes a section discussing
+&lt;em&gt;slots&lt;/em&gt; and &lt;tt class="docutils literal"&gt;Namedtuple&lt;/tt&gt;.&lt;/p&gt;
+&lt;p&gt;You may know that you can use &lt;em&gt;slots&lt;/em&gt; to save memory:&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;pre&gt;&lt;span&gt;&lt;/span&gt;&lt;span class="k"&gt;class&lt;/span&gt; &lt;span class="nc"&gt;Point&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nb"&gt;object&lt;/span&gt;&lt;span class="p"&gt;):&lt;/span&gt;
+    &lt;span class="vm"&gt;__slots__&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="s1"&gt;&amp;#39;x&amp;#39;&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="s1"&gt;&amp;#39;y&amp;#39;&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt;
+    &lt;span class="k"&gt;def&lt;/span&gt; &lt;span class="fm"&gt;__init__&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="bp"&gt;self&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="n"&gt;x&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="n"&gt;y&lt;/span&gt;&lt;span class="p"&gt;):&lt;/span&gt;
+        &lt;span class="bp"&gt;self&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;x&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="n"&gt;x&lt;/span&gt;
+        &lt;span class="bp"&gt;self&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="n"&gt;y&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="n"&gt;y&lt;/span&gt;
+&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;&lt;tt class="docutils literal"&gt;__slots__&lt;/tt&gt; lists the properties allowed for instances of the class. When
+slots are defined the object attributes are stored in a list instead of the
+&lt;tt class="docutils literal"&gt;__dict__&lt;/tt&gt; dictionary, which saves memory.&lt;/p&gt;
+&lt;p&gt;I knew all this already. What I didn't know is that types created with the
+&lt;tt class="docutils literal"&gt;namedtuple()&lt;/tt&gt; factory have &lt;tt class="docutils literal"&gt;__slots__&lt;/tt&gt; set to &lt;tt class="docutils literal"&gt;()&lt;/tt&gt; (the empty tuple).
+So using a named tuple type is almost as efficient as using a class with
+&lt;tt class="docutils literal"&gt;__slots__&lt;/tt&gt; in terms of memory usage.&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;pre&gt;&lt;span&gt;&lt;/span&gt;&lt;span class="kn"&gt;from&lt;/span&gt; &lt;span class="nn"&gt;collections&lt;/span&gt; &lt;span class="kn"&gt;import&lt;/span&gt; &lt;span class="n"&gt;namedtuple&lt;/span&gt;
+
+&lt;span class="n"&gt;Point&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="n"&gt;namedtuple&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="s1"&gt;&amp;#39;Point&amp;#39;&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="p"&gt;[&lt;/span&gt;&lt;span class="s1"&gt;&amp;#39;x&amp;#39;&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="s1"&gt;&amp;#39;y&amp;#39;&lt;/span&gt;&lt;span class="p"&gt;])&lt;/span&gt;
+&lt;span class="k"&gt;assert&lt;/span&gt; &lt;span class="n"&gt;Point&lt;/span&gt;&lt;span class="o"&gt;.&lt;/span&gt;&lt;span class="vm"&gt;__slots__&lt;/span&gt; &lt;span class="ow"&gt;is&lt;/span&gt; &lt;span class="p"&gt;()&lt;/span&gt;
+&lt;/pre&gt;&lt;/div&gt;
+&lt;/div&gt;
+&lt;div class="section" id="rdbms-and-orm"&gt;
+&lt;h2&gt;RDBMS&amp;nbsp;and ORM&lt;/h2&gt;
+&lt;p&gt;The &amp;quot;RDBMS&amp;nbsp;and ORM&amp;quot; shows how to &amp;quot;stream data with Flask and PostgreSQL&amp;quot;.  More
+specifically this demonstrates how to use PostgreSQL's &lt;a class="reference external" href="http://www.postgresql.org/docs/current/static/sql-notify.html"&gt;NOTIFY&lt;/a&gt; and &lt;a class="reference external" href="http://www.postgresql.org/docs/current/static/sql-listen.html"&gt;LISTEN&lt;/a&gt; commands
+together with &lt;a class="reference external" href="https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events/Using_server-sent_events"&gt;server-sent events&lt;/a&gt;
+(SSE) in a &lt;a class="reference external" href="http://flask.pocoo.org/"&gt;Flask&lt;/a&gt; project to push data to the browser.
+What's nice is to see how PostgreSQL, SSE and Flask make this easy and
+straightforward!&lt;/p&gt;
+&lt;/div&gt;
+</content><category term="Python"></category><category term="Book"></category></entry><entry><title>A response to Iván's "Leaflet vs OpenLayers" talk</title><link href="https://erilem.net/a-response-to-ivans-leaflet-vs-openlayers-talk.html" rel="alternate"></link><published>2015-09-21T10:36:00+02:00</published><updated>2015-09-21T10:36:00+02:00</updated><author><name>Erilem</name></author><id>tag:erilem.net,2015-09-21:/a-response-to-ivans-leaflet-vs-openlayers-talk.html</id><summary type="html">&lt;p&gt;This blog post is a response to Iván Sánchez Ortega's &amp;quot;Leaflet vs OpenLayers 3&amp;quot;
+&lt;a class="reference external" href="https://github.com/IvanSanchez/leaflet-vs-openlayers-slides"&gt;talk&lt;/a&gt;, which he
+gave at FOSS4G Seoul. I, as an OpenLayers developer, would like to defend
+OpenLayers and provide some comments that I think are important making.&lt;/p&gt;
+&lt;div class="section" id="newbie-friendliness"&gt;
+&lt;h2&gt;Newbie Friendliness&lt;/h2&gt;
+&lt;p&gt;To compare Leaflet and OpenLayers in terms …&lt;/p&gt;&lt;/div&gt;</summary><content type="html">&lt;p&gt;This blog post is a response to Iván Sánchez Ortega's &amp;quot;Leaflet vs OpenLayers 3&amp;quot;
+&lt;a class="reference external" href="https://github.com/IvanSanchez/leaflet-vs-openlayers-slides"&gt;talk&lt;/a&gt;, which he
+gave at FOSS4G Seoul. I, as an OpenLayers developer, would like to defend
+OpenLayers and provide some comments that I think are important making.&lt;/p&gt;
+&lt;div class="section" id="newbie-friendliness"&gt;
+&lt;h2&gt;Newbie Friendliness&lt;/h2&gt;
+&lt;p&gt;To compare Leaflet and OpenLayers in terms of &amp;quot;Newbie Friendliness&amp;quot; Iván took
+the simplest tutorial of each lib and tried to create a basic OSM map centered
+on Seoul. The OpenLayers tutorial didn't make it clear that the longitude
+should come before the latitude in the array defining the view center, so Iván
+ended up with a newbie-unfriendly error message at map initialization time.&lt;/p&gt;
+&lt;p&gt;The OpenLayers documentation problem has been &lt;a class="reference external" href="https://github.com/openlayers/ol3/pull/4132"&gt;fixed&lt;/a&gt; since then. But in general
+I agree that Leaflet is more newbie-friendly than OpenLayers. For example, the
+notion of Coordinate Reference System (CRS) is explicit in OpenLayers. This is
+because we want OpenLayers to work with Web Mercator, as well as with other
+projection systems.&lt;/p&gt;
+&lt;p&gt;I also think one cannot judge friendliness with just one example. For example, it would be interesting to compare
+Leaflet and OpenLayers in terms of easiness of creating a map in a local
+projection, the Korean 2000 (&lt;tt class="docutils literal"&gt;EPSG:5179&lt;/tt&gt;) projection for example.&lt;/p&gt;
+&lt;/div&gt;
+&lt;div class="section" id="build-sizes"&gt;
+&lt;h2&gt;Build sizes&lt;/h2&gt;
+&lt;p&gt;Iván compares the size of minified builds (126 KB for Leaflet, versus 465 KB
+for OpenLayers). He also compares the number of classes and namespaces (52 for
+Leaflet, versus 163 for OpenLayers). Great! What does that mean? It means two
+things. (a) OpenLayers includes more built-in features than Leaflet. (b)
+OpenLayers users should create custom builds of OpenLayers, with just what
+their application needs. This cannot be stressed enough.&lt;/p&gt;
+&lt;p&gt;Iván does mention custom builds in his talk. He also says that creating custom
+builds requires using the Closure Compiler, and that this may « not fit with
+your toolchain ». In fact, if you use Node/NPM in your Javascript project,
+which is what a lot of Javascript developers use these days, installing
+OpenLayers will also install
+&lt;a class="reference external" href="https://github.com/openlayers/closure-util/"&gt;closure-util&lt;/a&gt;, which will
+download and install the Closure Compiler for you. So if you use Node, the only
+thing you need for creating custom builds is Java (a Java Runtime Environment).&lt;/p&gt;
+&lt;p&gt;And, about OpenLayers, Iván also says that « most integration tools (Angular,
+React, Polymer) or toolchains won't be able to slim it down without help ».
+I have to say that I have a hard time understanding what he means here. Do
+Angular and React include build tools that are compatible with Leaflet and not
+with OpenLayers? Sorry, I don't get it.&lt;/p&gt;
+&lt;p&gt;Iván also compares the size of unminified files (223.6 KB for Leaflet, versus
+3.5 MB for OpenLayers). He's right. This is a problem, somewhat related to the
+use of the Closure Library. We are considering removing our dependency to the
+Closure Library, so we hope to fix that problem in the future.&lt;/p&gt;
+&lt;p&gt;For the record, we, at Camptocamp, don't use &lt;tt class="docutils literal"&gt;&lt;span class="pre"&gt;ol-debug.js&lt;/span&gt;&lt;/tt&gt; at all. Instead we
+use an auto-loading mechanism where the OpenLayers scripts are individually
+loaded based on the dependencies tree. But this is a bit advanced.&lt;/p&gt;
+&lt;/div&gt;
+&lt;div class="section" id="coding-patterns"&gt;
+&lt;h2&gt;Coding Patterns&lt;/h2&gt;
+&lt;p&gt;The OpenLayers code snippet provided by Iván could be replaced by this:&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;pre&gt;&lt;span&gt;&lt;/span&gt;&lt;span class="kd"&gt;var&lt;/span&gt; &lt;span class="nx"&gt;map&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="k"&gt;new&lt;/span&gt; &lt;span class="nx"&gt;ol&lt;/span&gt;&lt;span class="p"&gt;.&lt;/span&gt;&lt;span class="nx"&gt;Map&lt;/span&gt;&lt;span class="p"&gt;({&lt;/span&gt;
+  &lt;span class="nx"&gt;target&lt;/span&gt;&lt;span class="o"&gt;:&lt;/span&gt; &lt;span class="s1"&gt;&amp;#39;ol3map&amp;#39;&lt;/span&gt;
+&lt;span class="p"&gt;});&lt;/span&gt;
+&lt;span class="nx"&gt;map&lt;/span&gt;&lt;span class="p"&gt;.&lt;/span&gt;&lt;span class="nx"&gt;addLayer&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="k"&gt;new&lt;/span&gt; &lt;span class="nx"&gt;ol&lt;/span&gt;&lt;span class="p"&gt;.&lt;/span&gt;&lt;span class="nx"&gt;layer&lt;/span&gt;&lt;span class="p"&gt;.&lt;/span&gt;&lt;span class="nx"&gt;Tile&lt;/span&gt;&lt;span class="p"&gt;({&lt;/span&gt;
+  &lt;span class="nx"&gt;source&lt;/span&gt;&lt;span class="o"&gt;:&lt;/span&gt; &lt;span class="k"&gt;new&lt;/span&gt; &lt;span class="nx"&gt;ol&lt;/span&gt;&lt;span class="p"&gt;.&lt;/span&gt;&lt;span class="nx"&gt;source&lt;/span&gt;&lt;span class="p"&gt;.&lt;/span&gt;&lt;span class="nx"&gt;OSM&lt;/span&gt;&lt;span class="p"&gt;()&lt;/span&gt;
+&lt;span class="p"&gt;});&lt;/span&gt;
+&lt;span class="nx"&gt;map&lt;/span&gt;&lt;span class="p"&gt;.&lt;/span&gt;&lt;span class="nx"&gt;setView&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="k"&gt;new&lt;/span&gt; &lt;span class="nx"&gt;ol&lt;/span&gt;&lt;span class="p"&gt;.&lt;/span&gt;&lt;span class="nx"&gt;View&lt;/span&gt;&lt;span class="p"&gt;({&lt;/span&gt;
+  &lt;span class="nx"&gt;center&lt;/span&gt;&lt;span class="o"&gt;:&lt;/span&gt; &lt;span class="nx"&gt;ol&lt;/span&gt;&lt;span class="p"&gt;.&lt;/span&gt;&lt;span class="nx"&gt;proj&lt;/span&gt;&lt;span class="p"&gt;.&lt;/span&gt;&lt;span class="nx"&gt;fromLonLat&lt;/span&gt;&lt;span class="p"&gt;([&lt;/span&gt;&lt;span class="mi"&gt;127&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="mi"&gt;37&lt;/span&gt;&lt;span class="p"&gt;]),&lt;/span&gt;
+  &lt;span class="nx"&gt;zoom&lt;/span&gt;&lt;span class="o"&gt;:&lt;/span&gt; &lt;span class="mi"&gt;8&lt;/span&gt;
+&lt;span class="p"&gt;});&lt;/span&gt;
+&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;So by using a more imperative style, you can get the same indentation level as
+the Leaflet code snippet. So I find Iván's arguments rather weak.&lt;/p&gt;
+&lt;p&gt;It is true that OpenLayers provides more classes, uses the Simple Features Spec
+(and GeoJSON) as the feature data model, and is generally more verbose than
+Leaflet. But this may also make your code more explicit. There are more
+important things in my opinion.&lt;/p&gt;
+&lt;/div&gt;
+&lt;div class="section" id="documentation"&gt;
+&lt;h2&gt;Documentation&lt;/h2&gt;
+&lt;p&gt;Iván is correct to note that the 125 (and counting) examples OpenLayers
+provides are an important aspect. This is what users should look at to learn
+about how to use the library. The OpenLayers development team does a good job
+at adding a new example for every new feature, and maintaining all these
+examples.&lt;/p&gt;
+&lt;p&gt;It also true that OpenLayers' &lt;a class="reference external" href="http://openlayers.org/en/master/apidoc/"&gt;API documentation&lt;/a&gt; is verbose and imperfect, but it is
+comprehensive, always in sync with the code, and it includes relevant
+information. The OpenLayers team is committed to making the API documentation
+nicer and more convenient to users.&lt;/p&gt;
+&lt;/div&gt;
+&lt;div class="section" id="map-rotation"&gt;
+&lt;h2&gt;Map Rotation&lt;/h2&gt;
+&lt;p&gt;OpenLayers has supported map rotation from day 1. It is a core concept of
+OpenLayers. Leaflet doesn't support it. So Iván created patch for this. Kudos
+to him! To my knowledge no pull request has been created yet. And reading this
+GitHub &lt;a class="reference external" href="https://github.com/Leaflet/Leaflet/issues/268#issuecomment-1928759"&gt;comment&lt;/a&gt; from
+Vladimir Agafonkin I am wondering if this functionality will ever be merged in
+Leaflet. Unless Vladimir has changed his mind, which would be fine!&lt;/p&gt;
+&lt;/div&gt;
+&lt;div class="section" id="d"&gt;
+&lt;h2&gt;3D&lt;/h2&gt;
+&lt;p&gt;It's correct that OpenLayers alone doesn't support rendering 3D objects. But
+OpenLayers includes a WebGL renderer at its core, which already supports Image
+layers, Tile layers and Vector layers, although only Point geometries are
+supported at this point. So I think OpenLayers is in a good position to display
+3D objects in the future, better than Leaflet. Iván's &lt;a class="reference external" href="https://github.com/IvanSanchez/Leaflet.gl"&gt;Leaflet.gl&lt;/a&gt; is just a (very nice) hack at
+this point, and I don't see it being merged in Leaflet any time soon. Maybe
+another challenge Iván will accept :)&lt;/p&gt;
+&lt;/div&gt;
+</content><category term="OpenLayers 3"></category><category term="Leaflet"></category><category term="FOSS4G"></category></entry><entry><title>Fanstatic</title><link href="https://erilem.net/fanstatic.html" rel="alternate"></link><published>2011-10-15T21:08:00+02:00</published><updated>2011-10-15T21:08:00+02:00</updated><author><name>Erilem</name></author><id>tag:erilem.net,2011-10-15:/fanstatic.html</id><summary type="html">&lt;p&gt;A Pyramid-based framework we work on at Camptocamp uses
+&lt;a class="reference external" href="http://docs.formalchemy.org/pyramid_formalchemy/"&gt;pyramid_formalchemy&lt;/a&gt; and its companion module, &lt;a class="reference external" href="http://www.gawel.org/docs/fa.jquery/"&gt;fa.jquery&lt;/a&gt;. The
+latter relies on &lt;a class="reference external" href="http://www.fanstatic.org"&gt;Fanstatic&lt;/a&gt;.&lt;/p&gt;
+&lt;p&gt;Fanstatic is basically a WSGI middleware that can inject script and link
+tags in HTML pages, produced deeper in the WSGI stack. Any WSGI
+application or middleware wrapped by …&lt;/p&gt;</summary><content type="html">&lt;p&gt;A Pyramid-based framework we work on at Camptocamp uses
+&lt;a class="reference external" href="http://docs.formalchemy.org/pyramid_formalchemy/"&gt;pyramid_formalchemy&lt;/a&gt; and its companion module, &lt;a class="reference external" href="http://www.gawel.org/docs/fa.jquery/"&gt;fa.jquery&lt;/a&gt;. The
+latter relies on &lt;a class="reference external" href="http://www.fanstatic.org"&gt;Fanstatic&lt;/a&gt;.&lt;/p&gt;
+&lt;p&gt;Fanstatic is basically a WSGI middleware that can inject script and link
+tags in HTML pages, produced deeper in the WSGI stack. Any WSGI
+application or middleware wrapped by a Fanstatic middleware can call
+&lt;tt class="docutils literal"&gt;need()&lt;/tt&gt; on Fanstatic resources to instruct Fanstatic to inject script
+or link tags for these resources. Fanstatic is simple, easy to use, and
+well documented.&lt;/p&gt;
+&lt;p&gt;But I've been wondering what you can do with Fanstatic that you can't
+with &lt;a class="reference external" href="http://www.makotemplates.org/"&gt;Mako&lt;/a&gt; or any other template engine. With Fanstatic you can insert
+scripts and styles based on some request-dependent conditions. You can
+also have a single place in the code where resources are inserted,
+thereby avoiding duplications in the HTML files composing your web site.
+But these are things you can also do with a template engine. One of the
+goals of template engines is indeed to avoid duplicating (HTML) code, by
+placing common code in template pieces, and having the template engine
+put them together to form the actual HTML page.&lt;/p&gt;
+&lt;p&gt;I actually see one case where Fanstatic could be particularly useful:
+one needs to extend/decorate pages that you don't create yourself,
+because they're produced by a library you rely on. (fa.jquery is one of
+these libraries.) With Fanstatic you can let the library create the
+page, and have Fanstatic inject scripts and styles in the page for you.
+But, if the lib doesn't use Fanstatic for inserting its own scripts and
+styles you won't be able to control where Fanstatic will insert your
+scripts and styles - Fanstatic will insert them either at the very top
+or at the very bottom of the page, which can be a problem. Fanstatic
+could provide options to give the application developer more control on
+where resources are inserted, but it would never provide the needed
+flexibility. If the lib you rely on uses Fanstatic you can create
+Fanstatic resources that depend on the lib's resources, and thereby have
+Fanstatic inject resources in the desired order.&lt;/p&gt;
+&lt;p&gt;As a conclusion I still have some doubts about the actual usefullness of
+Fanstatic, but they're mitigated by the aforementioned &amp;quot;uncontrolled
+pages&amp;quot; case. And I may discover other use cases as I go.&lt;/p&gt;
+</content></entry><entry><title>Papyrus</title><link href="https://erilem.net/papyrus.html" rel="alternate"></link><published>2011-07-09T07:25:00+02:00</published><updated>2011-07-09T07:25:00+02:00</updated><author><name>Erilem</name></author><id>tag:erilem.net,2011-07-09:/papyrus.html</id><summary type="html">&lt;p&gt;A few days ago I pushed &lt;a class="reference external" href="https://github.com/elemoine/papyrus_mapproxy"&gt;papyrus_mapproxy&lt;/a&gt; on Github. The objective of
+papyrus_mapproxy is to make it easy to embed &lt;a class="reference external" href="http://mapproxy.org/"&gt;MapProxy&lt;/a&gt; in &lt;a class="reference external" href="http://docs.pylonsproject.org/docs/pyramid.html"&gt;Pyramid&lt;/a&gt;
+apps.&lt;/p&gt;
+&lt;p&gt;This new module is a good opportunity for me to describe what I've been
+up to with Papyrus.&lt;/p&gt;
+&lt;p&gt;I have developed five Papyrus modules: papyrus, papyrus_tilecache …&lt;/p&gt;</summary><content type="html">&lt;p&gt;A few days ago I pushed &lt;a class="reference external" href="https://github.com/elemoine/papyrus_mapproxy"&gt;papyrus_mapproxy&lt;/a&gt; on Github. The objective of
+papyrus_mapproxy is to make it easy to embed &lt;a class="reference external" href="http://mapproxy.org/"&gt;MapProxy&lt;/a&gt; in &lt;a class="reference external" href="http://docs.pylonsproject.org/docs/pyramid.html"&gt;Pyramid&lt;/a&gt;
+apps.&lt;/p&gt;
+&lt;p&gt;This new module is a good opportunity for me to describe what I've been
+up to with Papyrus.&lt;/p&gt;
+&lt;p&gt;I have developed five Papyrus modules: papyrus, papyrus_tilecache,
+papyrus_mapproxy, papyrus_ogcproxy, and papyrus_mapnik. The last four
+are companion modules for the first one.&lt;/p&gt;
+&lt;p&gt;I wrote these modules to learn Pyramid, and assess its extensibility,
+with the goal to eventually provide extensions that will ease the work
+of Pyramid developers working on mapping apps.&lt;/p&gt;
+&lt;p&gt;The main module, &lt;a class="reference external" href="https://github.com/elemoine/papyrus"&gt;papyrus&lt;/a&gt;, provides conveniences for creating feature
+web services. For example, it provides a GeoJSON renderer, and a full
+implementation of the &lt;a class="reference external" href="http://trac.mapfish.org/trac/mapfish/wiki/MapFishProtocol"&gt;MapFish Protocol&lt;/a&gt;.&lt;/p&gt;
+&lt;p&gt;The &lt;a class="reference external" href="https://github.com/elemoine/papyrus_tilecache"&gt;papyrus_tilecache&lt;/a&gt; and &lt;a class="reference external" href="https://github.com/elemoine/papyrus_mapproxy"&gt;pyramid_mapproxy&lt;/a&gt; modules make it easy
+to embed &lt;a class="reference external" href="http://tilecache.org/"&gt;TileCache&lt;/a&gt; and MapProxy in Pyramid apps, respectively.&lt;/p&gt;
+&lt;p&gt;The &lt;a class="reference external" href="https://github.com/elemoine/papyrus_mapnik"&gt;papyrus_mapnik&lt;/a&gt; module aims to ease using &lt;a class="reference external" href="http://mapnik.org/"&gt;Mapnik&lt;/a&gt; in Pyramid
+apps. This module is experimental, and would need some work to be
+actually useful.&lt;/p&gt;
+&lt;p&gt;The &lt;a class="reference external" href="https://github.com/elemoine/papyrus_ogcproxy"&gt;papyrus_ogcproxy&lt;/a&gt; provides a proxy service for OGC protocols. It
+was developed for working around the Same Origin Policy implemented in
+browsers.&lt;/p&gt;
+&lt;p&gt;I believe there's high value in embedding services, like tile rendering
+and caching services, in the web application. That can greatly ease
+deployment. It also allows leveraging transverse layers of the
+application, like the security layer.&lt;/p&gt;
+&lt;p&gt;Building a consistent, well integrated, and scalable application that
+requires external independent services is, to say the least, a big
+challenge I think. Assembling different types of services within a
+single application, relying on horizontal scaling, is much more
+appealing to me.&lt;/p&gt;
+&lt;p&gt;Anyway, any feedback on Papyrus is welcome!&lt;/p&gt;
+</content><category term="papyrus"></category><category term="pyramid"></category></entry><entry><title>OpenLayers sandbox dev with git svn</title><link href="https://erilem.net/openlayers-sandbox-dev-with-git-svn.html" rel="alternate"></link><published>2010-11-10T22:17:00+01:00</published><updated>2010-11-10T22:17:00+01:00</updated><author><name>Erilem</name></author><id>tag:erilem.net,2010-11-10:/openlayers-sandbox-dev-with-git-svn.html</id><summary type="html">&lt;p&gt;I've been using git-svn for OpenLayers development for some time now.
+Although git-svn isn't so easy to work with, I'm quite happy with it for
+OpenLayers.&lt;/p&gt;
+&lt;p&gt;So I have a git-svn clone of
+&lt;tt class="docutils literal"&gt;&lt;span class="pre"&gt;http://svn.openlayers.org/trunk/openlayers&lt;/span&gt;&lt;/tt&gt; on my development
+machine. I use this git repository for &amp;quot;trunk …&lt;/p&gt;</summary><content type="html">&lt;p&gt;I've been using git-svn for OpenLayers development for some time now.
+Although git-svn isn't so easy to work with, I'm quite happy with it for
+OpenLayers.&lt;/p&gt;
+&lt;p&gt;So I have a git-svn clone of
+&lt;tt class="docutils literal"&gt;&lt;span class="pre"&gt;http://svn.openlayers.org/trunk/openlayers&lt;/span&gt;&lt;/tt&gt; on my development
+machine. I use this git repository for &amp;quot;trunk work&amp;quot;, that is mainly for
+bug fixes meant to go to trunk. When I start working on a bug fix, I
+create a temporary branch, naming it with the id of the corresponding
+trac ticket. When I have patch reviewed and accepted, I merge the
+temporary branch into the master, dcommit, and remove the temporary
+branch.&lt;/p&gt;
+&lt;p&gt;These days, I've been working on more experimental things (&lt;em&gt;Kinetic
+Dragging&lt;/em&gt;). Using OpenLayers SVN sandboxes is nice for developing new
+features and experimenting, because they allow you to easily show and
+share your work. So I needed a way to have my experimental box is a
+sandbox while still managing my code with git-svn. And here's what I
+did.&lt;/p&gt;
+&lt;p&gt;I started by creating a sandbox in the OpenLayers SVN repository:&lt;/p&gt;
+&lt;pre class="literal-block"&gt;
+$ svn cp http://svn.openlayers.org/trunk/openlayers http://svn.openlayers.org/sandbox/elemoine/kinetic
+&lt;/pre&gt;
+&lt;p&gt;Then, I added a new &lt;tt class="docutils literal"&gt;&lt;span class="pre"&gt;svn-remote&lt;/span&gt;&lt;/tt&gt; in my OpenLayers Git repository's
+&lt;tt class="docutils literal"&gt;.git/config&lt;/tt&gt;:&lt;/p&gt;
+&lt;pre class="literal-block"&gt;
+[svn-remote &amp;quot;svn-kinetic&amp;quot;]
+url = http://svn.openlayers.org/sandbox/elemoine/kinetic
+fetch = :refs/remotes/git-svn-kinetic
+&lt;/pre&gt;
+&lt;p&gt;and fetched changes from that remote branch with:&lt;/p&gt;
+&lt;pre class="literal-block"&gt;
+$ git svn fetch svn-kinetic -r 10884
+&lt;/pre&gt;
+&lt;p&gt;&lt;tt class="docutils literal"&gt;10884&lt;/tt&gt; is the number of the SVN revision created when the sandbox directory
+was built with &lt;tt class="docutils literal"&gt;svn cp&lt;/tt&gt;. This command created a remote branch named
+git-svn-kinetic, and listed when entering &lt;tt class="docutils literal"&gt;git branch &lt;span class="pre"&gt;-r&lt;/span&gt;&lt;/tt&gt;:&lt;/p&gt;
+&lt;pre class="literal-block"&gt;
+$ git branch -r
+git-svn
+git-svn-kinetic
+&lt;/pre&gt;
+&lt;p&gt;Then I checked out the freshly-created remote branch, and created a
+local branch from it:&lt;/p&gt;
+&lt;pre class="literal-block"&gt;
+$ git checkout git-svn-kinetic
+$ git checkout -b kinetic
+&lt;/pre&gt;
+&lt;p&gt;The local branch &amp;quot;kinetic&amp;quot; is bound to the remote branch &amp;quot;git-svn-kinetic&amp;quot;, and
+&amp;quot;git svn dcommit&amp;quot; commands done with the &amp;quot;kinetic&amp;quot; branch checked out go to
+&lt;a class="reference external" href="http://svn.openlayers.org/sandbox/elemoine/kinetic"&gt;http://svn.openlayers.org/sandbox/elemoine/kinetic&lt;/a&gt;, which is exactly what
+I want.&lt;/p&gt;
+</content></entry><entry><title>Function decorators in JavaScript</title><link href="https://erilem.net/function-decorators-in-javascript.html" rel="alternate"></link><published>2010-08-02T06:42:00+02:00</published><updated>2010-08-02T06:42:00+02:00</updated><author><name>Erilem</name></author><id>tag:erilem.net,2010-08-02:/function-decorators-in-javascript.html</id><summary type="html">&lt;p&gt;I've been looking at how to implement function decorators in JavaScript.
+The FireFox Sync extension (&lt;a class="reference external" href="http://hg.mozilla.org/services/fx-sync"&gt;http://hg.mozilla.org/services/fx-sync&lt;/a&gt;)
+provides a nice implementation. I'm going to describe that
+implementation in this post.&lt;/p&gt;
+&lt;p&gt;So let's assume we have an application with &amp;quot;classes&amp;quot; (constructors and
+prototypes, really), and we always …&lt;/p&gt;</summary><content type="html">&lt;p&gt;I've been looking at how to implement function decorators in JavaScript.
+The FireFox Sync extension (&lt;a class="reference external" href="http://hg.mozilla.org/services/fx-sync"&gt;http://hg.mozilla.org/services/fx-sync&lt;/a&gt;)
+provides a nice implementation. I'm going to describe that
+implementation in this post.&lt;/p&gt;
+&lt;p&gt;So let's assume we have an application with &amp;quot;classes&amp;quot; (constructors and
+prototypes, really), and we always want the same behavior when
+exceptions occur in these classes' methods.&lt;/p&gt;
+&lt;p&gt;Our classes look like:&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;pre&gt;&lt;span&gt;&lt;/span&gt;&lt;span class="nx"&gt;MyCtor&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="kd"&gt;function&lt;/span&gt;&lt;span class="p"&gt;()&lt;/span&gt; &lt;span class="p"&gt;{};&lt;/span&gt;
+&lt;span class="nx"&gt;MyCtor&lt;/span&gt;&lt;span class="p"&gt;.&lt;/span&gt;&lt;span class="nx"&gt;prototype&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
+    &lt;span class="nx"&gt;method&lt;/span&gt;&lt;span class="o"&gt;:&lt;/span&gt; &lt;span class="kd"&gt;function&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nx"&gt;a&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="nx"&gt;b&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
+        &lt;span class="c1"&gt;// do something with a and b&lt;/span&gt;
+    &lt;span class="p"&gt;}&lt;/span&gt;
+&lt;span class="p"&gt;};&lt;/span&gt;
+&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;The common behavior is implemented at a single place in a decorator
+function:&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;pre&gt;&lt;span&gt;&lt;/span&gt;&lt;span class="kd"&gt;var&lt;/span&gt; &lt;span class="nx"&gt;decorators&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
+    &lt;span class="k"&gt;catch&lt;/span&gt;&lt;span class="o"&gt;:&lt;/span&gt; &lt;span class="kd"&gt;function&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nx"&gt;f&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
+        &lt;span class="k"&gt;return&lt;/span&gt; &lt;span class="kd"&gt;function&lt;/span&gt;&lt;span class="p"&gt;()&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
+            &lt;span class="k"&gt;try&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
+                &lt;span class="nx"&gt;f&lt;/span&gt;&lt;span class="p"&gt;();&lt;/span&gt;
+            &lt;span class="p"&gt;}&lt;/span&gt; &lt;span class="k"&gt;catch&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nx"&gt;e&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
+                &lt;span class="nx"&gt;console&lt;/span&gt;&lt;span class="p"&gt;.&lt;/span&gt;&lt;span class="nx"&gt;log&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nx"&gt;e&lt;/span&gt;&lt;span class="p"&gt;);&lt;/span&gt;
+            &lt;span class="p"&gt;}&lt;/span&gt;
+        &lt;span class="p"&gt;};&lt;/span&gt;
+    &lt;span class="p"&gt;}&lt;/span&gt;
+&lt;span class="p"&gt;};&lt;/span&gt;
+&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;&lt;tt class="docutils literal"&gt;decorators.catch&lt;/tt&gt; is the decorator function. It returns a function
+that executes the decorated function (&lt;tt class="docutils literal"&gt;f&lt;/tt&gt;) in a try/catch block and
+logs a message if an exception occurs.&lt;/p&gt;
+&lt;p&gt;Decorating &lt;tt class="docutils literal"&gt;method&lt;/tt&gt; with decorators.catch is done as follows:&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;pre&gt;&lt;span&gt;&lt;/span&gt;&lt;span class="nx"&gt;MyCtor&lt;/span&gt;&lt;span class="p"&gt;.&lt;/span&gt;&lt;span class="nx"&gt;prototype&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
+    &lt;span class="nx"&gt;method&lt;/span&gt;&lt;span class="o"&gt;:&lt;/span&gt; &lt;span class="kd"&gt;function&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nx"&gt;a&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="nx"&gt;b&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt;
+        &lt;span class="nx"&gt;decorators&lt;/span&gt;&lt;span class="p"&gt;.&lt;/span&gt;&lt;span class="k"&gt;catch&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="kd"&gt;function&lt;/span&gt;&lt;span class="p"&gt;()&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
+            &lt;span class="c1"&gt;// do something with a and b&lt;/span&gt;
+        &lt;span class="p"&gt;})()&lt;/span&gt;
+&lt;span class="p"&gt;};&lt;/span&gt;
+&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;&lt;tt class="docutils literal"&gt;method&lt;/tt&gt; now calls our decorator, and the actual logic of the method is moved
+in an anonymous function passed to the decorator. The anonymous function can
+still access the arguments &lt;tt class="docutils literal"&gt;a&lt;/tt&gt; and &lt;tt class="docutils literal"&gt;b&lt;/tt&gt; thanks to the closure.&lt;/p&gt;
+&lt;p&gt;You may be wondering why &lt;tt class="docutils literal"&gt;decorators.catch&lt;/tt&gt; delegates the decoration to an
+inner function as opposed to doing it itself. This is to be able to chain
+decoration. For example:&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;pre&gt;&lt;span&gt;&lt;/span&gt; &lt;span class="nx"&gt;MyCtor&lt;/span&gt;&lt;span class="p"&gt;.&lt;/span&gt;&lt;span class="nx"&gt;prototype&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
+    &lt;span class="nx"&gt;method&lt;/span&gt;&lt;span class="o"&gt;:&lt;/span&gt; &lt;span class="kd"&gt;function&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nx"&gt;a&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="nx"&gt;b&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt;
+        &lt;span class="nx"&gt;decorators&lt;/span&gt;&lt;span class="p"&gt;.&lt;/span&gt;&lt;span class="nx"&gt;lock&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nx"&gt;decorators&lt;/span&gt;&lt;span class="p"&gt;.&lt;/span&gt;&lt;span class="k"&gt;catch&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="kd"&gt;function&lt;/span&gt;&lt;span class="p"&gt;()&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
+            &lt;span class="c1"&gt;// do something with a and b&lt;/span&gt;
+        &lt;span class="p"&gt;}))()&lt;/span&gt;
+&lt;span class="p"&gt;};&lt;/span&gt;
+&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;where &lt;tt class="docutils literal"&gt;decorators.lock&lt;/tt&gt; would be a new decorator of ours.&lt;/p&gt;
+&lt;p&gt;I guess there are other ways to implement function decorators in
+JavaScript. I find this one is simple and elegant.&lt;/p&gt;
+</content></entry><entry><title>Server-side OpenLayers</title><link href="https://erilem.net/server-side-openlayers.html" rel="alternate"></link><published>2010-03-14T10:28:00+01:00</published><updated>2010-03-14T10:28:00+01:00</updated><author><name>Erilem</name></author><id>tag:erilem.net,2010-03-14:/server-side-openlayers.html</id><summary type="html">&lt;p&gt;I've been interested in server-side JavaScript lately. As a proof of
+feasibility (to myself) I've put together a node.js-based web service
+that gets geographic objects from PostGIS and provides a GeoJSON
+representation of these objects.&lt;/p&gt;
+&lt;p&gt;For this I've used node.js, postgres-js and OpenLayers.&lt;/p&gt;
+&lt;p&gt;&lt;a class="reference external" href="http://nodejs.org"&gt;node.js&lt;/a&gt; is a lib …&lt;/p&gt;</summary><content type="html">&lt;p&gt;I've been interested in server-side JavaScript lately. As a proof of
+feasibility (to myself) I've put together a node.js-based web service
+that gets geographic objects from PostGIS and provides a GeoJSON
+representation of these objects.&lt;/p&gt;
+&lt;p&gt;For this I've used node.js, postgres-js and OpenLayers.&lt;/p&gt;
+&lt;p&gt;&lt;a class="reference external" href="http://nodejs.org"&gt;node.js&lt;/a&gt; is a lib whose goal is &amp;quot;to provide an easy way to build
+scalable network applications&amp;quot;. node.js relies on an event-driven
+architecture (through epoll, kqueue, /dev/poll, or select). I'd
+recommend looking at the &lt;a class="reference external" href="http://s3.amazonaws.com/four.livejournal/20091117/jsconf.pdf"&gt;jsconf slides&lt;/a&gt; to know more about the
+philosophy and design of node.js.&lt;/p&gt;
+&lt;p&gt;The &amp;quot;Hello World&amp;quot; node.js web service looks like that:&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;pre&gt;&lt;span&gt;&lt;/span&gt;&lt;span class="kd"&gt;var&lt;/span&gt; &lt;span class="nx"&gt;sys&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nx"&gt;require&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="s1"&gt;&amp;#39;sys&amp;#39;&lt;/span&gt;&lt;span class="p"&gt;),&lt;/span&gt;
+    &lt;span class="nx"&gt;http&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nx"&gt;require&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="s1"&gt;&amp;#39;http&amp;#39;&lt;/span&gt;&lt;span class="p"&gt;);&lt;/span&gt;
+
+&lt;span class="nx"&gt;http&lt;/span&gt;&lt;span class="p"&gt;.&lt;/span&gt;&lt;span class="nx"&gt;createServer&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="kd"&gt;function&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nx"&gt;req&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="nx"&gt;res&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
+    &lt;span class="nx"&gt;res&lt;/span&gt;&lt;span class="p"&gt;.&lt;/span&gt;&lt;span class="nx"&gt;writeHead&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="mi"&gt;200&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;&lt;span class="s1"&gt;&amp;#39;Content-Type&amp;#39;&lt;/span&gt;&lt;span class="o"&gt;:&lt;/span&gt; &lt;span class="s1"&gt;&amp;#39;text/plain&amp;#39;&lt;/span&gt;&lt;span class="p"&gt;});&lt;/span&gt;
+    &lt;span class="nx"&gt;res&lt;/span&gt;&lt;span class="p"&gt;.&lt;/span&gt;&lt;span class="nx"&gt;write&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="s1"&gt;&amp;#39;Hello World&amp;#39;&lt;/span&gt;&lt;span class="p"&gt;);&lt;/span&gt;
+    &lt;span class="nx"&gt;res&lt;/span&gt;&lt;span class="p"&gt;.&lt;/span&gt;&lt;span class="nx"&gt;close&lt;/span&gt;&lt;span class="p"&gt;();&lt;/span&gt;
+&lt;span class="p"&gt;}).&lt;/span&gt;&lt;span class="nx"&gt;listen&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="mi"&gt;8000&lt;/span&gt;&lt;span class="p"&gt;);&lt;/span&gt;
+
+&lt;span class="nx"&gt;sys&lt;/span&gt;&lt;span class="p"&gt;.&lt;/span&gt;&lt;span class="nx"&gt;puts&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="s1"&gt;&amp;#39;Server running at http://127.0.0.1:8000/&amp;#39;&lt;/span&gt;&lt;span class="p"&gt;);&lt;/span&gt;
+&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;Thanks to node.js's nice interface I think the code is pretty much
+self-explained.&lt;/p&gt;
+&lt;p&gt;Assuming the above code is included in a file named &lt;em&gt;file.js&lt;/em&gt;, starting
+the web service is done with:&lt;/p&gt;
+&lt;pre class="literal-block"&gt;
+$ node file.js
+&lt;/pre&gt;
+&lt;p&gt;Now we can use &lt;a class="reference external" href="http://github.com/creationix/postgres-js"&gt;postgres-js&lt;/a&gt; to read data from a PostGIS table.
+postgres-js sends SQL queries to PostgreSQL through TCP. postgres-js is
+a node.js module, so it can be loaded with &lt;tt class="docutils literal"&gt;require()&lt;/tt&gt; (just like the
+built-in &lt;em&gt;sys&lt;/em&gt; and &lt;em&gt;http&lt;/em&gt; modules).&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;pre&gt;&lt;span&gt;&lt;/span&gt;&lt;span class="kd"&gt;var&lt;/span&gt; &lt;span class="nx"&gt;sys&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nx"&gt;require&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="s1"&gt;&amp;#39;sys&amp;#39;&lt;/span&gt;&lt;span class="p"&gt;),&lt;/span&gt;
+    &lt;span class="nx"&gt;http&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nx"&gt;require&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="s1"&gt;&amp;#39;http&amp;#39;&lt;/span&gt;&lt;span class="p"&gt;),&lt;/span&gt;
+    &lt;span class="nx"&gt;Postgres&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nx"&gt;require&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="s1"&gt;&amp;#39;postgres&amp;#39;&lt;/span&gt;&lt;span class="p"&gt;);&lt;/span&gt;
+
+&lt;span class="kd"&gt;var&lt;/span&gt; &lt;span class="nx"&gt;db&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="k"&gt;new&lt;/span&gt; &lt;span class="nx"&gt;Postgres&lt;/span&gt;&lt;span class="p"&gt;.&lt;/span&gt;&lt;span class="nx"&gt;Connection&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="s2"&gt;&amp;quot;dbname&amp;quot;&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="s2"&gt;&amp;quot;username&amp;quot;&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="s2"&gt;&amp;quot;password&amp;quot;&lt;/span&gt;&lt;span class="p"&gt;);&lt;/span&gt;
+
+&lt;span class="nx"&gt;http&lt;/span&gt;&lt;span class="p"&gt;.&lt;/span&gt;&lt;span class="nx"&gt;createServer&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="kd"&gt;function&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nx"&gt;req&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="nx"&gt;res&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
+    &lt;span class="nx"&gt;db&lt;/span&gt;&lt;span class="p"&gt;.&lt;/span&gt;&lt;span class="nx"&gt;query&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="s2"&gt;&amp;quot;SELECT name, astext(geom) AS geom FROM table&amp;quot;&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="kd"&gt;function&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nx"&gt;objs&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
+        &lt;span class="nx"&gt;res&lt;/span&gt;&lt;span class="p"&gt;.&lt;/span&gt;&lt;span class="nx"&gt;writeHead&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="mi"&gt;200&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;&lt;span class="s1"&gt;&amp;#39;Content-Type&amp;#39;&lt;/span&gt;&lt;span class="o"&gt;:&lt;/span&gt; &lt;span class="s1"&gt;&amp;#39;text/plain&amp;#39;&lt;/span&gt;&lt;span class="p"&gt;});&lt;/span&gt;
+        &lt;span class="nx"&gt;res&lt;/span&gt;&lt;span class="p"&gt;.&lt;/span&gt;&lt;span class="nx"&gt;write&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="s2"&gt;&amp;quot;it works&amp;quot;&lt;/span&gt;&lt;span class="p"&gt;);&lt;/span&gt;
+        &lt;span class="nx"&gt;res&lt;/span&gt;&lt;span class="p"&gt;.&lt;/span&gt;&lt;span class="nx"&gt;close&lt;/span&gt;&lt;span class="p"&gt;();&lt;/span&gt;
+    &lt;span class="p"&gt;});&lt;/span&gt;
+&lt;span class="p"&gt;}).&lt;/span&gt;&lt;span class="nx"&gt;listen&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="mi"&gt;8000&lt;/span&gt;&lt;span class="p"&gt;);&lt;/span&gt;
+
+&lt;span class="nx"&gt;sys&lt;/span&gt;&lt;span class="p"&gt;.&lt;/span&gt;&lt;span class="nx"&gt;puts&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="s1"&gt;&amp;#39;Server running at http://127.0.0.1:8000/&amp;#39;&lt;/span&gt;&lt;span class="p"&gt;);&lt;/span&gt;
+&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;The last step involves using &lt;a class="reference external" href="http://www.openlayers.org"&gt;OpenLayers&lt;/a&gt; for deserializing from WKT
+and serializing to GeoJSON. To use OpenLayers in the node.js
+application, and load it with the &lt;tt class="docutils literal"&gt;require()&lt;/tt&gt; function, I packaged
+OpenLayers as a node.js module. It was easy enough, see the &lt;a class="reference external" href="http://nodejs.org/api.html#_modules"&gt;modules
+doc&lt;/a&gt;.&lt;/p&gt;
+&lt;p&gt;And here's the final code:&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;pre&gt;&lt;span&gt;&lt;/span&gt;&lt;span class="kd"&gt;var&lt;/span&gt; &lt;span class="nx"&gt;sys&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nx"&gt;require&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="s1"&gt;&amp;#39;sys&amp;#39;&lt;/span&gt;&lt;span class="p"&gt;),&lt;/span&gt;
+    &lt;span class="nx"&gt;http&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nx"&gt;require&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="s1"&gt;&amp;#39;http&amp;#39;&lt;/span&gt;&lt;span class="p"&gt;),&lt;/span&gt;
+    &lt;span class="nx"&gt;Postgres&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nx"&gt;require&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="s1"&gt;&amp;#39;postgres&amp;#39;&lt;/span&gt;&lt;span class="p"&gt;),&lt;/span&gt;
+    &lt;span class="nx"&gt;OpenLayers&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nx"&gt;require&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="s1"&gt;&amp;#39;openlayers&amp;#39;&lt;/span&gt;&lt;span class="p"&gt;).&lt;/span&gt;&lt;span class="nx"&gt;OpenLayers&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+
+&lt;span class="kd"&gt;var&lt;/span&gt; &lt;span class="nx"&gt;db&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="k"&gt;new&lt;/span&gt; &lt;span class="nx"&gt;Postgres&lt;/span&gt;&lt;span class="p"&gt;.&lt;/span&gt;&lt;span class="nx"&gt;Connection&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="s2"&gt;&amp;quot;dbname&amp;quot;&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="s2"&gt;&amp;quot;username&amp;quot;&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="s2"&gt;&amp;quot;password&amp;quot;&lt;/span&gt;&lt;span class="p"&gt;);&lt;/span&gt;
+
+&lt;span class="nx"&gt;http&lt;/span&gt;&lt;span class="p"&gt;.&lt;/span&gt;&lt;span class="nx"&gt;createServer&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="kd"&gt;function&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nx"&gt;req&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="nx"&gt;res&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
+    &lt;span class="nx"&gt;db&lt;/span&gt;&lt;span class="p"&gt;.&lt;/span&gt;&lt;span class="nx"&gt;query&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="s2"&gt;&amp;quot;SELECT name, astext(geom) AS geom FROM table&amp;quot;&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="kd"&gt;function&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nx"&gt;objs&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
+        &lt;span class="kd"&gt;var&lt;/span&gt; &lt;span class="nx"&gt;features&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="p"&gt;[];&lt;/span&gt;
+        &lt;span class="kd"&gt;var&lt;/span&gt; &lt;span class="nx"&gt;wkt&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="k"&gt;new&lt;/span&gt; &lt;span class="nx"&gt;OpenLayers&lt;/span&gt;&lt;span class="p"&gt;.&lt;/span&gt;&lt;span class="nx"&gt;Format&lt;/span&gt;&lt;span class="p"&gt;.&lt;/span&gt;&lt;span class="nx"&gt;WKT&lt;/span&gt;&lt;span class="p"&gt;();&lt;/span&gt;
+        &lt;span class="k"&gt;for&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="kd"&gt;var&lt;/span&gt; &lt;span class="nx"&gt;i&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;&lt;span class="mi"&gt;0&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;&lt;span class="nx"&gt;len&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;&lt;span class="nx"&gt;objs&lt;/span&gt;&lt;span class="p"&gt;.&lt;/span&gt;&lt;span class="nx"&gt;length&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt; &lt;span class="nx"&gt;i&lt;/span&gt;&lt;span class="o"&gt;&amp;lt;&lt;/span&gt;&lt;span class="nx"&gt;len&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt; &lt;span class="nx"&gt;i&lt;/span&gt;&lt;span class="o"&gt;++&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
+            &lt;span class="nx"&gt;features&lt;/span&gt;&lt;span class="p"&gt;.&lt;/span&gt;&lt;span class="nx"&gt;push&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;
+                &lt;span class="k"&gt;new&lt;/span&gt; &lt;span class="nx"&gt;OpenLayers&lt;/span&gt;&lt;span class="p"&gt;.&lt;/span&gt;&lt;span class="nx"&gt;Feature&lt;/span&gt;&lt;span class="p"&gt;.&lt;/span&gt;&lt;span class="nx"&gt;Vector&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;
+                    &lt;span class="nx"&gt;wkt&lt;/span&gt;&lt;span class="p"&gt;.&lt;/span&gt;&lt;span class="nx"&gt;read&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nx"&gt;obj&lt;/span&gt;&lt;span class="p"&gt;[&lt;/span&gt;&lt;span class="nx"&gt;i&lt;/span&gt;&lt;span class="p"&gt;].&lt;/span&gt;&lt;span class="nx"&gt;geom&lt;/span&gt;&lt;span class="p"&gt;).&lt;/span&gt;&lt;span class="nx"&gt;geometry&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;&lt;span class="nx"&gt;name&lt;/span&gt;&lt;span class="o"&gt;:&lt;/span&gt; &lt;span class="nx"&gt;obj&lt;/span&gt;&lt;span class="p"&gt;[&lt;/span&gt;&lt;span class="nx"&gt;i&lt;/span&gt;&lt;span class="p"&gt;].&lt;/span&gt;&lt;span class="nx"&gt;name&lt;/span&gt;&lt;span class="p"&gt;}&lt;/span&gt;
+                &lt;span class="p"&gt;)&lt;/span&gt;
+            &lt;span class="p"&gt;);&lt;/span&gt;
+        &lt;span class="p"&gt;}&lt;/span&gt;
+        &lt;span class="kd"&gt;var&lt;/span&gt; &lt;span class="nx"&gt;geojson&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="k"&gt;new&lt;/span&gt; &lt;span class="nx"&gt;OpenLayers&lt;/span&gt;&lt;span class="p"&gt;.&lt;/span&gt;&lt;span class="nx"&gt;Format&lt;/span&gt;&lt;span class="p"&gt;.&lt;/span&gt;&lt;span class="nx"&gt;GeoJSON&lt;/span&gt;&lt;span class="p"&gt;();&lt;/span&gt;
+        &lt;span class="kd"&gt;var&lt;/span&gt; &lt;span class="nx"&gt;output&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nx"&gt;geojson&lt;/span&gt;&lt;span class="p"&gt;.&lt;/span&gt;&lt;span class="nx"&gt;write&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nx"&gt;features&lt;/span&gt;&lt;span class="p"&gt;);&lt;/span&gt;
+        &lt;span class="nx"&gt;res&lt;/span&gt;&lt;span class="p"&gt;.&lt;/span&gt;&lt;span class="nx"&gt;writeHead&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="mi"&gt;200&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;&lt;span class="s1"&gt;&amp;#39;Content-Type&amp;#39;&lt;/span&gt;&lt;span class="o"&gt;:&lt;/span&gt; &lt;span class="s1"&gt;&amp;#39;application/json&amp;#39;&lt;/span&gt;&lt;span class="p"&gt;});&lt;/span&gt;
+        &lt;span class="nx"&gt;res&lt;/span&gt;&lt;span class="p"&gt;.&lt;/span&gt;&lt;span class="nx"&gt;write&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nx"&gt;output&lt;/span&gt;&lt;span class="p"&gt;);&lt;/span&gt;
+        &lt;span class="nx"&gt;res&lt;/span&gt;&lt;span class="p"&gt;.&lt;/span&gt;&lt;span class="nx"&gt;close&lt;/span&gt;&lt;span class="p"&gt;();&lt;/span&gt;
+    &lt;span class="p"&gt;});&lt;/span&gt;
+&lt;span class="p"&gt;}).&lt;/span&gt;&lt;span class="nx"&gt;listen&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="mi"&gt;8000&lt;/span&gt;&lt;span class="p"&gt;);&lt;/span&gt;
+
+&lt;span class="nx"&gt;sys&lt;/span&gt;&lt;span class="p"&gt;.&lt;/span&gt;&lt;span class="nx"&gt;puts&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="s1"&gt;&amp;#39;Server running at http://127.0.0.1:8000/&amp;#39;&lt;/span&gt;&lt;span class="p"&gt;);&lt;/span&gt;
+&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;The End. Happy server-side JavaScript to all.&lt;/p&gt;
+</content><category term="javascript"></category><category term="node"></category><category term="openlayers"></category></entry><entry><title>Y Combinator</title><link href="https://erilem.net/y-combinator.html" rel="alternate"></link><published>2009-07-02T19:08:00+02:00</published><updated>2009-07-02T19:08:00+02:00</updated><author><name>Erilem</name></author><id>tag:erilem.net,2009-07-02:/y-combinator.html</id><summary type="html">&lt;p&gt;I've been reading &amp;quot;The Little Schemer&amp;quot; from Daniel P. Friedman and
+Matthias Felleisen. Very interesting reading.&lt;/p&gt;
+&lt;p&gt;The nineth chapter introduces the Y Combinator function, a pretty
+interesting beast! Quoting &lt;a class="reference external" href="http://www.crockford.com/javascript/little.html"&gt;Crockford&lt;/a&gt;: &amp;quot;one of the most strange and
+wonderful artifacts of Computer Science&amp;quot;. As a primer, here's how the Y
+Combinator looks …&lt;/p&gt;</summary><content type="html">&lt;p&gt;I've been reading &amp;quot;The Little Schemer&amp;quot; from Daniel P. Friedman and
+Matthias Felleisen. Very interesting reading.&lt;/p&gt;
+&lt;p&gt;The nineth chapter introduces the Y Combinator function, a pretty
+interesting beast! Quoting &lt;a class="reference external" href="http://www.crockford.com/javascript/little.html"&gt;Crockford&lt;/a&gt;: &amp;quot;one of the most strange and
+wonderful artifacts of Computer Science&amp;quot;. As a primer, here's how the Y
+Combinator looks like (in Python):&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;pre&gt;&lt;span&gt;&lt;/span&gt;&lt;span class="k"&gt;def&lt;/span&gt; &lt;span class="nf"&gt;Y&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;func&lt;/span&gt;&lt;span class="p"&gt;):&lt;/span&gt;
+    &lt;span class="k"&gt;return&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="k"&gt;lambda&lt;/span&gt; &lt;span class="n"&gt;f&lt;/span&gt; &lt;span class="p"&gt;:&lt;/span&gt; &lt;span class="n"&gt;f&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;f&lt;/span&gt;&lt;span class="p"&gt;))(&lt;/span&gt;&lt;span class="k"&gt;lambda&lt;/span&gt; &lt;span class="n"&gt;f&lt;/span&gt; &lt;span class="p"&gt;:&lt;/span&gt; &lt;span class="n"&gt;func&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="k"&gt;lambda&lt;/span&gt; &lt;span class="n"&gt;x&lt;/span&gt; &lt;span class="p"&gt;:&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;f&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;f&lt;/span&gt;&lt;span class="p"&gt;))(&lt;/span&gt;&lt;span class="n"&gt;x&lt;/span&gt;&lt;span class="p"&gt;)))&lt;/span&gt;
+&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;Looks scary, doesn't it? (It did scare me when I first saw it at least.)&lt;/p&gt;
+&lt;p&gt;The Y Combinator creates a recursive function from a non-recursive
+function that looks like the recursive function one wants to create. The
+Y Combinator can for example be used to obtain recursive functions from
+anonymous functions, which, with most programming languages, cannot be
+recursive.&lt;/p&gt;
+&lt;p&gt;This blog post proposes defining the Y Combinator function in Python.&lt;/p&gt;
+&lt;p&gt;Goal: find the function Y (the Y Combinator) such that:&lt;/p&gt;
+&lt;pre class="literal-block"&gt;
+fact = Y(like_fact)
+&lt;/pre&gt;
+&lt;p&gt;where:&lt;/p&gt;
+&lt;ul class="simple"&gt;
+&lt;li&gt;&lt;tt class="docutils literal"&gt;fact&lt;/tt&gt; is the factorial function&lt;/li&gt;
+&lt;li&gt;&lt;tt class="docutils literal"&gt;like_fact&lt;/tt&gt; is defined as follows:&lt;/li&gt;
+&lt;/ul&gt;
+&lt;div class="highlight"&gt;&lt;pre&gt;&lt;span&gt;&lt;/span&gt;&lt;span class="k"&gt;def&lt;/span&gt; &lt;span class="nf"&gt;like_fact&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;r&lt;/span&gt;&lt;span class="p"&gt;):&lt;/span&gt;
+    &lt;span class="k"&gt;def&lt;/span&gt; &lt;span class="nf"&gt;f&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;n&lt;/span&gt;&lt;span class="p"&gt;):&lt;/span&gt;
+        &lt;span class="k"&gt;if&lt;/span&gt; &lt;span class="n"&gt;n&lt;/span&gt; &lt;span class="o"&gt;&amp;lt;&lt;/span&gt; &lt;span class="mi"&gt;2&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt;
+            &lt;span class="k"&gt;return&lt;/span&gt; &lt;span class="mi"&gt;1&lt;/span&gt;
+        &lt;span class="k"&gt;else&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt;
+            &lt;span class="k"&gt;return&lt;/span&gt; &lt;span class="n"&gt;n&lt;/span&gt; &lt;span class="o"&gt;*&lt;/span&gt; &lt;span class="n"&gt;r&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;n&lt;/span&gt; &lt;span class="o"&gt;-&lt;/span&gt; &lt;span class="mi"&gt;1&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt;
+    &lt;span class="k"&gt;return&lt;/span&gt; &lt;span class="n"&gt;f&lt;/span&gt;
+&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;So &lt;tt class="docutils literal"&gt;Y&lt;/tt&gt; takes a non-recursive function (which can theoritically be expressed
+as an anonymous function) that looks like the recursive factorial function and
+returns the factorial function.&lt;/p&gt;
+&lt;p&gt;You may have noticed thay our &lt;tt class="docutils literal"&gt;like_fact&lt;/tt&gt; function is not expresed as an
+anonymous function. This is because Python does not allow us to do it: the
+inner function &lt;tt class="docutils literal"&gt;f&lt;/tt&gt; cannot be defined with &lt;tt class="docutils literal"&gt;lambda&lt;/tt&gt; because it includes
+conditional statements, the outer function &lt;tt class="docutils literal"&gt;like_fact&lt;/tt&gt; cannot be defined with
+&lt;tt class="docutils literal"&gt;lambda&lt;/tt&gt; because it includes an inner function that isn't defined with
+&lt;tt class="docutils literal"&gt;lambda&lt;/tt&gt;.&lt;/p&gt;
+&lt;p&gt;Using JavaScript the &lt;tt class="docutils literal"&gt;like_fact&lt;/tt&gt; function would be:&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;pre&gt;&lt;span&gt;&lt;/span&gt;&lt;span class="kd"&gt;function&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nx"&gt;r&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
+    &lt;span class="k"&gt;return&lt;/span&gt; &lt;span class="kd"&gt;function&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nx"&gt;n&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
+        &lt;span class="k"&gt;return&lt;/span&gt; &lt;span class="nx"&gt;n&lt;/span&gt; &lt;span class="o"&gt;&amp;lt;&lt;/span&gt; &lt;span class="mi"&gt;2&lt;/span&gt; &lt;span class="o"&gt;?&lt;/span&gt; &lt;span class="mi"&gt;1&lt;/span&gt; &lt;span class="o"&gt;:&lt;/span&gt; &lt;span class="nx"&gt;n&lt;/span&gt; &lt;span class="o"&gt;*&lt;/span&gt; &lt;span class="nx"&gt;r&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nx"&gt;n&lt;/span&gt; &lt;span class="o"&gt;-&lt;/span&gt; &lt;span class="mi"&gt;1&lt;/span&gt;&lt;span class="p"&gt;);&lt;/span&gt;
+    &lt;span class="p"&gt;};&lt;/span&gt;
+&lt;span class="p"&gt;}&lt;/span&gt;
+&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;We start our demonstration from the following statement:&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;pre&gt;&lt;span&gt;&lt;/span&gt;&lt;span class="n"&gt;fact&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="n"&gt;notlike_fact&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;notlike_fact&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt;
+&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;where &lt;tt class="docutils literal"&gt;notlike_fact&lt;/tt&gt; is:&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;pre&gt;&lt;span&gt;&lt;/span&gt;&lt;span class="k"&gt;def&lt;/span&gt; &lt;span class="nf"&gt;notlike_fact&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;r&lt;/span&gt;&lt;span class="p"&gt;):&lt;/span&gt;
+    &lt;span class="k"&gt;def&lt;/span&gt; &lt;span class="nf"&gt;f&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;n&lt;/span&gt;&lt;span class="p"&gt;):&lt;/span&gt;
+        &lt;span class="k"&gt;if&lt;/span&gt; &lt;span class="n"&gt;n&lt;/span&gt; &lt;span class="o"&gt;&amp;lt;&lt;/span&gt; &lt;span class="mi"&gt;2&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt;
+            &lt;span class="k"&gt;return&lt;/span&gt; &lt;span class="mi"&gt;1&lt;/span&gt;
+        &lt;span class="k"&gt;else&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt;
+            &lt;span class="k"&gt;return&lt;/span&gt; &lt;span class="n"&gt;n&lt;/span&gt; &lt;span class="o"&gt;*&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;r&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;r&lt;/span&gt;&lt;span class="p"&gt;))(&lt;/span&gt;&lt;span class="n"&gt;n&lt;/span&gt; &lt;span class="o"&gt;-&lt;/span&gt; &lt;span class="mi"&gt;1&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt;
+    &lt;span class="k"&gt;return&lt;/span&gt; &lt;span class="n"&gt;f&lt;/span&gt;
+&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;Now we rewrite the above statement using &lt;tt class="docutils literal"&gt;lambda&lt;/tt&gt;:&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;pre&gt;&lt;span&gt;&lt;/span&gt;&lt;span class="n"&gt;fact&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="k"&gt;lambda&lt;/span&gt; &lt;span class="n"&gt;f&lt;/span&gt; &lt;span class="p"&gt;:&lt;/span&gt; &lt;span class="n"&gt;f&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;f&lt;/span&gt;&lt;span class="p"&gt;))(&lt;/span&gt;&lt;span class="n"&gt;notlike_fact&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt;
+&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;Now we can extract &lt;tt class="docutils literal"&gt;like_fact&lt;/tt&gt; and rewrite the statement as (maybe the
+most difficult step):&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;pre&gt;&lt;span&gt;&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="k"&gt;lambda&lt;/span&gt; &lt;span class="n"&gt;f&lt;/span&gt; &lt;span class="p"&gt;:&lt;/span&gt; &lt;span class="n"&gt;f&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;f&lt;/span&gt;&lt;span class="p"&gt;))&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="k"&gt;lambda&lt;/span&gt; &lt;span class="n"&gt;f&lt;/span&gt; &lt;span class="p"&gt;:&lt;/span&gt; &lt;span class="n"&gt;like_fact&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="k"&gt;lambda&lt;/span&gt; &lt;span class="n"&gt;x&lt;/span&gt; &lt;span class="p"&gt;:&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;f&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;f&lt;/span&gt;&lt;span class="p"&gt;)(&lt;/span&gt;&lt;span class="n"&gt;x&lt;/span&gt;&lt;span class="p"&gt;)))&lt;/span&gt;
+&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;We can now write the Y function:&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;pre&gt;&lt;span&gt;&lt;/span&gt;&lt;span class="k"&gt;def&lt;/span&gt; &lt;span class="nf"&gt;Y&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;func&lt;/span&gt;&lt;span class="p"&gt;):&lt;/span&gt;
+    &lt;span class="k"&gt;return&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="k"&gt;lambda&lt;/span&gt; &lt;span class="n"&gt;f&lt;/span&gt; &lt;span class="p"&gt;:&lt;/span&gt; &lt;span class="n"&gt;f&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;f&lt;/span&gt;&lt;span class="p"&gt;))(&lt;/span&gt;&lt;span class="k"&gt;lambda&lt;/span&gt; &lt;span class="n"&gt;f&lt;/span&gt; &lt;span class="p"&gt;:&lt;/span&gt; &lt;span class="n"&gt;func&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="k"&gt;lambda&lt;/span&gt; &lt;span class="n"&gt;x&lt;/span&gt; &lt;span class="p"&gt;:&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;f&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;f&lt;/span&gt;&lt;span class="p"&gt;))(&lt;/span&gt;&lt;span class="n"&gt;x&lt;/span&gt;&lt;span class="p"&gt;)))&lt;/span&gt;
+&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;And we have:&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;pre&gt;&lt;span&gt;&lt;/span&gt;&lt;span class="n"&gt;fact&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="n"&gt;Y&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;like_fact&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt;
+&lt;span class="k"&gt;assert&lt;/span&gt; &lt;span class="n"&gt;fact&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="mi"&gt;1&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="o"&gt;==&lt;/span&gt; &lt;span class="mi"&gt;1&lt;/span&gt;
+&lt;span class="k"&gt;assert&lt;/span&gt; &lt;span class="n"&gt;fact&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="mi"&gt;2&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="o"&gt;==&lt;/span&gt; &lt;span class="mi"&gt;2&lt;/span&gt;
+&lt;span class="k"&gt;assert&lt;/span&gt; &lt;span class="n"&gt;fact&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="mi"&gt;3&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="o"&gt;==&lt;/span&gt; &lt;span class="mi"&gt;6&lt;/span&gt;
+&lt;span class="k"&gt;assert&lt;/span&gt; &lt;span class="n"&gt;fact&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="mi"&gt;4&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="o"&gt;==&lt;/span&gt; &lt;span class="mi"&gt;24&lt;/span&gt;
+&lt;span class="k"&gt;assert&lt;/span&gt; &lt;span class="n"&gt;fact&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="mi"&gt;5&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="o"&gt;==&lt;/span&gt; &lt;span class="mi"&gt;120&lt;/span&gt;
+&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;Cool, no?&lt;/p&gt;
+&lt;p&gt;Obviously &lt;tt class="docutils literal"&gt;Y&lt;/tt&gt; applies to other recursive functions, as an example let's apply
+it to Fibonacci:&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;pre&gt;&lt;span&gt;&lt;/span&gt;&lt;span class="k"&gt;def&lt;/span&gt; &lt;span class="nf"&gt;like_fibo&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;r&lt;/span&gt;&lt;span class="p"&gt;):&lt;/span&gt;
+    &lt;span class="k"&gt;def&lt;/span&gt; &lt;span class="nf"&gt;f&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;n&lt;/span&gt;&lt;span class="p"&gt;):&lt;/span&gt;
+        &lt;span class="k"&gt;if&lt;/span&gt; &lt;span class="n"&gt;n&lt;/span&gt; &lt;span class="o"&gt;&amp;lt;=&lt;/span&gt; &lt;span class="mi"&gt;2&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt;
+            &lt;span class="k"&gt;return&lt;/span&gt; &lt;span class="mi"&gt;1&lt;/span&gt;
+        &lt;span class="k"&gt;else&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt;
+            &lt;span class="k"&gt;return&lt;/span&gt; &lt;span class="n"&gt;r&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;n&lt;/span&gt; &lt;span class="o"&gt;-&lt;/span&gt; &lt;span class="mi"&gt;1&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="o"&gt;+&lt;/span&gt; &lt;span class="n"&gt;r&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;n&lt;/span&gt; &lt;span class="o"&gt;-&lt;/span&gt; &lt;span class="mi"&gt;2&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt;
+    &lt;span class="k"&gt;return&lt;/span&gt; &lt;span class="n"&gt;f&lt;/span&gt;
+
+&lt;span class="n"&gt;fibo&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="n"&gt;Y&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;like_fibo&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt;
+&lt;span class="k"&gt;assert&lt;/span&gt; &lt;span class="n"&gt;fibo&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="mi"&gt;1&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="o"&gt;==&lt;/span&gt; &lt;span class="mi"&gt;1&lt;/span&gt;
+&lt;span class="k"&gt;assert&lt;/span&gt; &lt;span class="n"&gt;fibo&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="mi"&gt;2&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="o"&gt;==&lt;/span&gt; &lt;span class="mi"&gt;1&lt;/span&gt;
+&lt;span class="k"&gt;assert&lt;/span&gt; &lt;span class="n"&gt;fibo&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="mi"&gt;3&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="o"&gt;==&lt;/span&gt; &lt;span class="mi"&gt;2&lt;/span&gt;
+&lt;span class="k"&gt;assert&lt;/span&gt; &lt;span class="n"&gt;fibo&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="mi"&gt;4&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="o"&gt;==&lt;/span&gt; &lt;span class="mi"&gt;3&lt;/span&gt;
+&lt;span class="k"&gt;assert&lt;/span&gt; &lt;span class="n"&gt;fibo&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="mi"&gt;5&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="o"&gt;==&lt;/span&gt; &lt;span class="mi"&gt;5&lt;/span&gt;
+&lt;span class="k"&gt;assert&lt;/span&gt; &lt;span class="n"&gt;fibo&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="mi"&gt;6&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="o"&gt;==&lt;/span&gt; &lt;span class="mi"&gt;8&lt;/span&gt;
+&lt;/pre&gt;&lt;/div&gt;
+</content><category term="functional programming"></category><category term="python"></category></entry><entry><title>Testing</title><link href="https://erilem.net/testing.html" rel="alternate"></link><published>2009-06-30T11:37:00+02:00</published><updated>2009-06-30T11:37:00+02:00</updated><author><name>Erilem</name></author><id>tag:erilem.net,2009-06-30:/testing.html</id><summary type="html">&lt;p&gt;I've been reading about testing. Here are a few words on my thoughts
+about testing.&lt;/p&gt;
+&lt;p&gt;From my reading and understanding there are three types of tests:&lt;/p&gt;
+&lt;ul class="simple"&gt;
+&lt;li&gt;Unit tests: a unit test tests a single function (e.g. an object
+method). A unit test must take care of isolating the tested …&lt;/li&gt;&lt;/ul&gt;</summary><content type="html">&lt;p&gt;I've been reading about testing. Here are a few words on my thoughts
+about testing.&lt;/p&gt;
+&lt;p&gt;From my reading and understanding there are three types of tests:&lt;/p&gt;
+&lt;ul class="simple"&gt;
+&lt;li&gt;Unit tests: a unit test tests a single function (e.g. an object
+method). A unit test must take care of isolating the tested function
+from the functions the tested function normally relies on (when
+executed outside any test).&lt;/li&gt;
+&lt;li&gt;Integration tests: an integration test tests if two or more dependent
+functions correctly work together.&lt;/li&gt;
+&lt;li&gt;User-acceptance tests: a user-acceptance tests whether a given
+function provides the behavior its users expect. User Interface tests
+belong to this type.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/p&gt;&lt;p&gt;These three types of tests are complementary, they all have their
+importance when testing an application.&lt;/p&gt;
+&lt;p&gt;In OpenLayers, GeoExt, and MapFish (its JavaScript library), we provide
+unit and integration tests, and actually don't distinguish whether
+they're of the unit or integration type (they're all referred to as unit
+tests, which is fine I think). Not providing user-acceptance tests makes
+sense, as OpenLayers, GeoExt and MapFish are libraries as opposed to
+applications. The three libraries come with examples that in some way
+are user-acceptance tests. (In OpenLayers we've attempted to create
+actual user-acceptance tests, but developpers haven't paid much
+attention to them, possibly their scopes and goals haven't been well
+defined.)&lt;/p&gt;
+&lt;p&gt;Applications built with OpenLayers and/or GeoExt and/or MapFish
+instantiate classes from these libraries. Often, most of their code
+doesn't include actual logic, and from that regard writing unit and
+integration tests for such applications doesn't make sense. However, as
+User Interfaces, these applications would deserve user-acceptance tests.&lt;/p&gt;
+&lt;p&gt;Providing automated User Interface tests is in my opinion a very
+difficult task, and I'd be very interested in having feedback from
+others on that.&lt;/p&gt;
+</content><category term="geoext"></category><category term="mapfish"></category><category term="openlayers"></category><category term="programming"></category><category term="testing"></category></entry><entry><title>MapFish and GeoExt</title><link href="https://erilem.net/mapfish-and-geoext.html" rel="alternate"></link><published>2009-04-19T20:40:00+02:00</published><updated>2009-04-19T20:40:00+02:00</updated><author><name>Erilem</name></author><id>tag:erilem.net,2009-04-19:/mapfish-and-geoext.html</id><summary type="html">&lt;p&gt;Matt Priour recently &lt;a class="reference external" href="http://www.geoext.org/pipermail/users/2009-April/000045.html"&gt;asked&lt;/a&gt; about the future of the client part of
+MapFish, and more specifically whether it will be replaced by &lt;a class="reference external" href="http://www.geoext.org"&gt;GeoExt&lt;/a&gt;.
+This is actually a question that every MapFish user should be asking
+:-). Anyway I thought an answer to that question could make a post on my
+blog …&lt;/p&gt;</summary><content type="html">&lt;p&gt;Matt Priour recently &lt;a class="reference external" href="http://www.geoext.org/pipermail/users/2009-April/000045.html"&gt;asked&lt;/a&gt; about the future of the client part of
+MapFish, and more specifically whether it will be replaced by &lt;a class="reference external" href="http://www.geoext.org"&gt;GeoExt&lt;/a&gt;.
+This is actually a question that every MapFish user should be asking
+:-). Anyway I thought an answer to that question could make a post on my
+blog. There it is.&lt;/p&gt;
+&lt;p&gt;&lt;strong&gt;The short story:&lt;/strong&gt; the client part of MapFish will not be replaced by
+GeoExt.&lt;/p&gt;
+&lt;p&gt;&lt;strong&gt;Now the longer story&lt;/strong&gt;. As of today the client part of MapFish
+includes OpenLayers, Ext, and the MapFish JavaScript lib. The latter is
+itself composed of two parts: &lt;em&gt;core&lt;/em&gt; and &lt;em&gt;widgets&lt;/em&gt;.&lt;/p&gt;
+&lt;ul class="simple"&gt;
+&lt;li&gt;&lt;em&gt;core&lt;/em&gt; includes classes that are independent of Ext; most of them
+extend OpenLayers classes like &lt;tt class="docutils literal"&gt;OpenLayers.Control&lt;/tt&gt;,
+&lt;tt class="docutils literal"&gt;OpenLayers.Protocol&lt;/tt&gt;, &lt;tt class="docutils literal"&gt;OpenLayers.Strategy&lt;/tt&gt;, etc. For example
+the client-side implementation of the &lt;a class="reference external" href="http://www.mapfish.org/trac/mapfish/wiki/MapFishProtocol"&gt;MapFish Protocol&lt;/a&gt; is part of
+&lt;em&gt;core&lt;/em&gt;.&lt;/li&gt;
+&lt;li&gt;&lt;em&gt;widgets&lt;/em&gt; includes Ext-based classes, mostly GUI components (but not
+only, the FeatureReader and stuff are part of &lt;em&gt;widgets&lt;/em&gt;). &lt;em&gt;widgets&lt;/em&gt;
+also has stuff that's directly related to the server side of MapFish,
+the print widgets are a good example.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/p&gt;&lt;p&gt;GeoExt will not replace &lt;em&gt;core&lt;/em&gt;, nor will it replace the &lt;em&gt;widgets&lt;/em&gt;
+components that rely on MapFish web services. But basically every new
+Ext-based component that isn't tied to any server-side stuff is going
+into GeoExt.&lt;/p&gt;
+&lt;p&gt;In addition to OpenLayers and Ext, MapFish will include GeoExt. We had
+initially planned to integrate GeoExt into MapFish earlier, but finally
+decided to let things settle down a bit in GeoExt before doing the
+integration. We're currently doing that integration, and we will
+gradually be deprecating classes as their equivalents are added into
+GeoExt. For example, the work on FeatureRecord, FeatureReader and
+FeatureStore we've been doing in GeoExt will deprecate the
+FeatureReader, FeatureStore and LayerStoreMediator classes in the
+MapFish JavaScript lib.&lt;/p&gt;
+&lt;p&gt;Also, MapFish, as a framework, aims to provide an integrated solution.
+For client-side development, this means that the developer doesn't need
+to download Ext, OpenLayers and GeoExt, install them within his
+application, and think about the organization of his application.
+Instead, we want that applications created with the MapFish framework
+are well organized from their creations; with the Ext, OpenLayers,
+GeoExt and MapFish libs ready, with the JavaScript build tool ready,
+with the unit test suite ready, etc. I guess I will cover this topic in
+a later post...&lt;/p&gt;
+&lt;p&gt;Wooo, two posts in two days, scarry... :-)&lt;/p&gt;
+</content></entry><entry><title>Additions to the MapFish Protocol</title><link href="https://erilem.net/additions-to-the-mapfish-protocol.html" rel="alternate"></link><published>2009-04-18T21:55:00+02:00</published><updated>2009-04-18T21:55:00+02:00</updated><author><name>Erilem</name></author><id>tag:erilem.net,2009-04-18:/additions-to-the-mapfish-protocol.html</id><summary type="html">&lt;p&gt;We recently added new stuff to the MapFish Protocol.&lt;/p&gt;
+&lt;p&gt;As a refresher, let's first take a look at what the MapFish Protocol had
+before the new additions.&lt;/p&gt;
+&lt;p&gt;(Note that you'd need the &lt;a class="reference external" href="https://addons.mozilla.org/fr/firefox/addon/10122"&gt;JSONovich&lt;/a&gt; FireFox extension to see the
+output of the examples given below in your web browser.)&lt;/p&gt;
+&lt;p&gt;&lt;strong&gt;Geographic query …&lt;/strong&gt;&lt;/p&gt;</summary><content type="html">&lt;p&gt;We recently added new stuff to the MapFish Protocol.&lt;/p&gt;
+&lt;p&gt;As a refresher, let's first take a look at what the MapFish Protocol had
+before the new additions.&lt;/p&gt;
+&lt;p&gt;(Note that you'd need the &lt;a class="reference external" href="https://addons.mozilla.org/fr/firefox/addon/10122"&gt;JSONovich&lt;/a&gt; FireFox extension to see the
+output of the examples given below in your web browser.)&lt;/p&gt;
+&lt;p&gt;&lt;strong&gt;Geographic query params&lt;/strong&gt;&lt;/p&gt;
+&lt;ul class="simple"&gt;
+&lt;li&gt;&lt;tt class="docutils literal"&gt;&lt;span class="pre"&gt;box={x1},{y1},{x2},{y2}&lt;/span&gt;&lt;/tt&gt;: the features within the specified
+bounding box&lt;/li&gt;
+&lt;li&gt;&lt;tt class="docutils literal"&gt;&lt;span class="pre"&gt;geometry={geojson_string}&lt;/span&gt;&lt;/tt&gt;: the features within the specified
+geometry&lt;/li&gt;
+&lt;li&gt;&lt;tt class="docutils literal"&gt;&lt;span class="pre"&gt;lon={lon}&amp;amp;lat={lat}&amp;amp;tolerance={tol}&lt;/span&gt;&lt;/tt&gt;: the features within the
+specified tolerance of the specified lon/lat&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/p&gt;&lt;p&gt;Examples:&lt;/p&gt;
+&lt;ul class="simple"&gt;
+&lt;li&gt;&lt;a class="reference external" href="http://demo.mapfish.org/mapfishsample/trunk/summits?box=6.2,45.6,6.3,45.7"&gt;http://demo.mapfish.org/mapfishsample/trunk/summits?box=6.2,45.6,6.3,45.7&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a class="reference external" href="http://demo.mapfish.org/mapfishsample/trunk/summits?geometry={&amp;quot;type&amp;quot;:&amp;quot;Polygon&amp;quot;,&amp;quot;coordinates&amp;quot;:[[[6.2,45.6],[6.3,45.6],[6.3,45.7],[6.2,45.7],[6.2,45.6]]]}"&gt;http://demo.mapfish.org/mapfishsample/trunk/summits?geometry={&amp;quot;type&amp;quot;:&amp;quot;Polygon&amp;quot;,&amp;quot;coordinates&amp;quot;:[[[6.2,45.6],[6.3,45.6],[6.3,45.7],[6.2,45.7],[6.2,45.6]]]}&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a class="reference external" href="http://demo.mapfish.org/mapfishsample/trunk/summits?lon=6.2&amp;amp;lat=45.6&amp;amp;tolerance=0.1"&gt;http://demo.mapfish.org/mapfishsample/trunk/summits?lon=6.2&amp;amp;lat=45.6&amp;amp;tolerance=0.1&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/p&gt;&lt;p&gt;&lt;strong&gt;Limiting and Sorting&lt;/strong&gt;&lt;/p&gt;
+&lt;ul class="simple"&gt;
+&lt;li&gt;&lt;tt class="docutils literal"&gt;&lt;span class="pre"&gt;limit={num}&lt;/span&gt;&lt;/tt&gt;: the maximum number of features returned&lt;/li&gt;
+&lt;li&gt;&lt;tt class="docutils literal"&gt;&lt;span class="pre"&gt;offset={num}&lt;/span&gt;&lt;/tt&gt;: the number of features to skip&lt;/li&gt;
+&lt;li&gt;&lt;tt class="docutils literal"&gt;&lt;span class="pre"&gt;order_by={field_name}&lt;/span&gt;&lt;/tt&gt;: the name of the field to use to order the
+features&lt;/li&gt;
+&lt;li&gt;&lt;tt class="docutils literal"&gt;dir=ASC|DESC&lt;/tt&gt;: the ordering direction&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/p&gt;&lt;p&gt;Examples:&lt;/p&gt;
+&lt;ul class="simple"&gt;
+&lt;li&gt;&lt;a class="reference external" href="http://demo.mapfish.org/mapfishsample/trunk/summits?limit=10"&gt;http://demo.mapfish.org/mapfishsample/trunk/summits?limit=10&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a class="reference external" href="http://demo.mapfish.org/mapfishsample/trunk/summits?limit=10&amp;amp;offset=2"&gt;http://demo.mapfish.org/mapfishsample/trunk/summits?limit=10&amp;amp;offset=2&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a class="reference external" href="http://demo.mapfish.org/mapfishsample/trunk/summits?limit=10&amp;amp;offset=2&amp;amp;order_by=elevation"&gt;http://demo.mapfish.org/mapfishsample/trunk/summits?limit=10&amp;amp;offset=2&amp;amp;order_by=elevation&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a class="reference external" href="http://demo.mapfish.org/mapfishsample/trunk/summits?limit=10&amp;amp;offset=2&amp;amp;order_by=elevation&amp;amp;dir=ASC"&gt;http://demo.mapfish.org/mapfishsample/trunk/summits?limit=10&amp;amp;offset=2&amp;amp;order_by=elevation&amp;amp;dir=ASC&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a class="reference external" href="http://demo.mapfish.org/mapfishsample/trunk/summits?limit=10&amp;amp;offset=2&amp;amp;order_by=elevation&amp;amp;dir=DESC"&gt;http://demo.mapfish.org/mapfishsample/trunk/summits?limit=10&amp;amp;offset=2&amp;amp;order_by=elevation&amp;amp;dir=DESC&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/p&gt;&lt;p&gt;&lt;strong&gt;The new params&lt;/strong&gt;&lt;/p&gt;
+&lt;ul class="simple"&gt;
+&lt;li&gt;&lt;tt class="docutils literal"&gt;no_geom=true|false&lt;/tt&gt;: so that the returned feature has no geometry
+(&amp;quot;geometry&amp;quot;: null)&lt;/li&gt;
+&lt;li&gt;&lt;tt class="docutils literal"&gt;&lt;span class="pre"&gt;attrs={field1}[,{field2},...]&lt;/span&gt;&lt;/tt&gt;: to restrict the list of properties
+returned in the features&lt;/li&gt;
+&lt;li&gt;&lt;tt class="docutils literal"&gt;&lt;span class="pre"&gt;queryable={field1}[,{field2},...]&lt;/span&gt;&lt;/tt&gt;: the names of the feature
+fields that can be queried&lt;/li&gt;
+&lt;li&gt;&lt;tt class="docutils literal"&gt;&lt;span class="pre"&gt;{field}__{query_op}={value}&lt;/span&gt;&lt;/tt&gt;: filter expression, field must be in
+the list of fields specified by queryable, query_op is one of &amp;quot;eq&amp;quot;,
+&amp;quot;ne&amp;quot;, &amp;quot;lt, &amp;quot;le&amp;quot;, &amp;quot;gt&amp;quot;, &amp;quot;ge&amp;quot;, &amp;quot;like&amp;quot;, &amp;quot;ilike&amp;quot;&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/p&gt;&lt;p&gt;And now an example combining all the new parameters:&lt;/p&gt;
+&lt;ul class="simple"&gt;
+&lt;li&gt;&lt;a class="reference external" href="http://demo.mapfish.org/mapfishsample/trunk/summits?queryable=name,elevation&amp;amp;name__ilike=col&amp;amp;elevation__gte=3500&amp;amp;attrs=name,elevation&amp;amp;no_geom=true"&gt;http://demo.mapfish.org/mapfishsample/trunk/summits?queryable=name,elevation&amp;amp;name__ilike=col&amp;amp;elevation__gte=3500&amp;amp;attrs=name,elevation&amp;amp;no_geom=true&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/p&gt;&lt;p&gt;The above query returns a GeoJSON representation of the summits whose
+names include &amp;quot;col&amp;quot; and whose elevations are greater than or equal to
+3500. The returned features have no geometry and their attributes
+include &amp;quot;name&amp;quot; and &amp;quot;elevation&amp;quot; only.&lt;/p&gt;
+&lt;p&gt;Not including the geometry in the features makes the parsing in the
+browser much faster, so for cases where the geometries aren't needed
+this is a big win.&lt;/p&gt;
+&lt;p&gt;Credits for the &amp;quot;&lt;tt class="docutils literal"&gt;&lt;span class="pre"&gt;queryable={field}&amp;amp;{field}__{query_op}={value}&lt;/span&gt;&lt;/tt&gt;&amp;quot;
+syntax goes to FeatureServer!&lt;/p&gt;
+</content></entry><entry><title>Secure TileCache With Pylons and Repoze</title><link href="https://erilem.net/secure-tilecache-with-pylons-and-repoze.html" rel="alternate"></link><published>2009-02-15T18:14:00+01:00</published><updated>2009-02-15T18:14:00+01:00</updated><author><name>Erilem</name></author><id>tag:erilem.net,2009-02-15:/secure-tilecache-with-pylons-and-repoze.html</id><summary type="html">&lt;p&gt;This post shows how one can secure TileCache with Pylons and Repoze.&lt;/p&gt;
+&lt;p&gt;In a Pylons application one can run a WSGI application from within a
+controller action. Here is a simple example:&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;pre&gt;&lt;span&gt;&lt;/span&gt;&lt;span class="k"&gt;class&lt;/span&gt; &lt;span class="nc"&gt;MainController&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;BaseController&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt;
+
+    &lt;span class="k"&gt;def&lt;/span&gt; &lt;span class="nf"&gt;action&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="bp"&gt;self&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="n"&gt;environ&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="n"&gt;start_response&lt;/span&gt;&lt;span class="p"&gt;):&lt;/span&gt;
+        &lt;span class="k"&gt;return&lt;/span&gt; &lt;span class="n"&gt;wsgiApp&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;environ&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="n"&gt;start_response&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt;
+&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;&lt;a class="reference external" href="http://tilecache.org/"&gt;TileCache&lt;/a&gt; is commonly run from within …&lt;/p&gt;</summary><content type="html">&lt;p&gt;This post shows how one can secure TileCache with Pylons and Repoze.&lt;/p&gt;
+&lt;p&gt;In a Pylons application one can run a WSGI application from within a
+controller action. Here is a simple example:&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;pre&gt;&lt;span&gt;&lt;/span&gt;&lt;span class="k"&gt;class&lt;/span&gt; &lt;span class="nc"&gt;MainController&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;BaseController&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt;
+
+    &lt;span class="k"&gt;def&lt;/span&gt; &lt;span class="nf"&gt;action&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="bp"&gt;self&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="n"&gt;environ&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="n"&gt;start_response&lt;/span&gt;&lt;span class="p"&gt;):&lt;/span&gt;
+        &lt;span class="k"&gt;return&lt;/span&gt; &lt;span class="n"&gt;wsgiApp&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;environ&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="n"&gt;start_response&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt;
+&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;&lt;a class="reference external" href="http://tilecache.org/"&gt;TileCache&lt;/a&gt; is commonly run from within &lt;tt class="docutils literal"&gt;mod_python&lt;/tt&gt;. TileCache can
+also be run as a WSGI application, therefore it can be run from within
+the controller action of a Pylons application. Here's how:&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;pre&gt;&lt;span&gt;&lt;/span&gt;&lt;span class="kn"&gt;from&lt;/span&gt; &lt;span class="nn"&gt;TileCache.Service&lt;/span&gt; &lt;span class="kn"&gt;import&lt;/span&gt; &lt;span class="n"&gt;wsgiApp&lt;/span&gt;
+
+&lt;span class="k"&gt;class&lt;/span&gt; &lt;span class="nc"&gt;MainController&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;BaseController&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt;
+
+    &lt;span class="k"&gt;def&lt;/span&gt; &lt;span class="nf"&gt;tilecache&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="bp"&gt;self&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="n"&gt;environ&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="n"&gt;start_response&lt;/span&gt;&lt;span class="p"&gt;):&lt;/span&gt;
+        &lt;span class="k"&gt;return&lt;/span&gt; &lt;span class="n"&gt;wsgiApp&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;environ&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="n"&gt;start_response&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt;
+&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;Pretty cool... But it gets really interesting when &lt;em&gt;repoze.what&lt;/em&gt; is
+added to the picture. For those who don't know repoze.what, repoze.what
+is an authorization framework for WSGI applications. repoze.what now
+provides a Pylons &lt;a class="reference external" href="http://code.gustavonarea.net/repoze.what-pylons/Manual/index.html"&gt;plugin&lt;/a&gt;, making it easy to protect controllers and
+controller actions in a Pylons application. Here's how our tilecache
+action can be protected:&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;pre&gt;&lt;span&gt;&lt;/span&gt;&lt;span class="kn"&gt;from&lt;/span&gt; &lt;span class="nn"&gt;TileCache.Service&lt;/span&gt; &lt;span class="kn"&gt;import&lt;/span&gt; &lt;span class="n"&gt;wsgiApp&lt;/span&gt;
+&lt;span class="kn"&gt;from&lt;/span&gt; &lt;span class="nn"&gt;repoze.what.predicates&lt;/span&gt; &lt;span class="kn"&gt;import&lt;/span&gt; &lt;span class="n"&gt;has_permission&lt;/span&gt;
+&lt;span class="kn"&gt;from&lt;/span&gt; &lt;span class="nn"&gt;repoze.what.plugins.pylonshq&lt;/span&gt; &lt;span class="kn"&gt;import&lt;/span&gt; &lt;span class="n"&gt;ActionProtector&lt;/span&gt;
+
+&lt;span class="k"&gt;class&lt;/span&gt; &lt;span class="nc"&gt;MainController&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;BaseController&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt;
+
+    &lt;span class="nd"&gt;@ActionProtector&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;has_permission&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="s1"&gt;&amp;#39;tilecache&amp;#39;&lt;/span&gt;&lt;span class="p"&gt;))&lt;/span&gt;
+    &lt;span class="k"&gt;def&lt;/span&gt; &lt;span class="nf"&gt;tilecache&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="bp"&gt;self&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="n"&gt;environ&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="n"&gt;start_response&lt;/span&gt;&lt;span class="p"&gt;):&lt;/span&gt;
+        &lt;span class="k"&gt;return&lt;/span&gt; &lt;span class="n"&gt;wsgiApp&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="n"&gt;environ&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="n"&gt;start_response&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt;
+&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;With the above, anyone who tries to access &lt;tt class="docutils literal"&gt;/tilecache&lt;/tt&gt; will have to
+be granted the &lt;em&gt;tilecache&lt;/em&gt; permission. Otherwise, authorization will be
+denied.&lt;/p&gt;
+&lt;p&gt;TileCache is secured!&lt;/p&gt;
+&lt;p&gt;People often want finer-grained authorization, like give certain users
+access to certain layers. With Pylons' routing system this can be easily
+and elegantly achieved using repoze.what, I will show that in a later
+post.&lt;/p&gt;
+</content></entry><entry><title>FeatureServer Versus MapFish Server</title><link href="https://erilem.net/featureserver-versus-mapfish-server.html" rel="alternate"></link><published>2008-10-31T15:10:00+01:00</published><updated>2008-10-31T15:10:00+01:00</updated><author><name>Erilem</name></author><id>tag:erilem.net,2008-10-31:/featureserver-versus-mapfish-server.html</id><summary type="html">&lt;p&gt;I thought I could say a few words on the differences between
+&lt;a class="reference external" href="http://featureserver.org/"&gt;FeatureServer&lt;/a&gt; and MapFish Server.&lt;/p&gt;
+&lt;p&gt;First, FeatureServer and MapFish Server have similarities. They share a
+similar, REST-based protocol, for creating, reading, updating and
+deleting features.&lt;/p&gt;
+&lt;p&gt;The main difference between the two: FeatureServer is a standalone
+application, MapFish Server is …&lt;/p&gt;</summary><content type="html">&lt;p&gt;I thought I could say a few words on the differences between
+&lt;a class="reference external" href="http://featureserver.org/"&gt;FeatureServer&lt;/a&gt; and MapFish Server.&lt;/p&gt;
+&lt;p&gt;First, FeatureServer and MapFish Server have similarities. They share a
+similar, REST-based protocol, for creating, reading, updating and
+deleting features.&lt;/p&gt;
+&lt;p&gt;The main difference between the two: FeatureServer is a standalone
+application, MapFish Server is a web-mapping development framework.&lt;/p&gt;
+&lt;p&gt;FeatureServer is perfect for very rapidly setting up editable layers,
+with no custom needs. MapFish Server is good if you work on a customer
+project, with specific, customer-oriented needs; MapFish&lt;/p&gt;
+&lt;p&gt;Server provides a complete development framework, which, thanks to the
+great components it relies on (&lt;a class="reference external" href="http://pylonshq.com"&gt;Pylons&lt;/a&gt;, &lt;a class="reference external" href="http://www.sqlalchemy.org"&gt;SQLAlchemy&lt;/a&gt;, &lt;a class="reference external" href="http://pypi.python.org/pypi/Shapely"&gt;Shapely&lt;/a&gt;,
+etc.) allows to write high-quality and maintainable code.&lt;/p&gt;
+&lt;p&gt;Two different goals.&lt;/p&gt;
+</content></entry><entry><title>MapFish 1.0</title><link href="https://erilem.net/mapfish-10.html" rel="alternate"></link><published>2008-10-17T07:58:00+02:00</published><updated>2008-10-17T07:58:00+02:00</updated><author><name>Erilem</name></author><id>tag:erilem.net,2008-10-17:/mapfish-10.html</id><summary type="html">&lt;p&gt;MapFish 1.0 is out!&lt;/p&gt;
+&lt;p&gt;The things I really like in MapFish 1.0:&lt;/p&gt;
+&lt;ul class="simple"&gt;
+&lt;li&gt;The PDF Printing Library. Everyone wants to print maps, &lt;a class="reference external" href="http://patrick.blog.thus.ch/"&gt;Patrick&lt;/a&gt;
+has turned everyone's dream into reality. The PDF Printing Library is
+great, it supports fancy stuff like vector rendering, map rotation,
+legend, etc. See this &lt;a class="reference external" href="https://trac.mapfish.org/trac/mapfish/wiki/PrintModuleDoc"&gt;page …&lt;/a&gt;&lt;/li&gt;&lt;/ul&gt;</summary><content type="html">&lt;p&gt;MapFish 1.0 is out!&lt;/p&gt;
+&lt;p&gt;The things I really like in MapFish 1.0:&lt;/p&gt;
+&lt;ul class="simple"&gt;
+&lt;li&gt;The PDF Printing Library. Everyone wants to print maps, &lt;a class="reference external" href="http://patrick.blog.thus.ch/"&gt;Patrick&lt;/a&gt;
+has turned everyone's dream into reality. The PDF Printing Library is
+great, it supports fancy stuff like vector rendering, map rotation,
+legend, etc. See this &lt;a class="reference external" href="https://trac.mapfish.org/trac/mapfish/wiki/PrintModuleDoc"&gt;page&lt;/a&gt; to know more. And there's more to come,
+&lt;a class="reference external" href="https://trac.mapfish.org/trac/mapfish/ticket/197"&gt;support&lt;/a&gt; for printing map annotations is about to make it into
+trunk.&lt;/li&gt;
+&lt;li&gt;MapFish Server implementation of the &lt;a class="reference external" href="https://trac.mapfish.org/trac/mapfish/wiki/MapFishProtocol"&gt;MapFish Protocol&lt;/a&gt; for
+creating, reading, updating and deleting features. We still need to
+add a feature editing widget to MapFish Client, the feature editing
+panel, currently demo'ed &lt;a class="reference external" href="http://dev.mapfish.org/sandbox/camptocamp/MapFishUnhcr/client/examples/editing/editing-panel.html"&gt;here&lt;/a&gt;, will probably make it into trunk
+soon.&lt;/li&gt;
+&lt;li&gt;MapFish Client relying on the OpenLayers protocol abstraction. With
+that every MapFish Searcher component can work with the MapFish
+Protocol as well as with any other protocols supported by OpenLayers
+(e.g. Gears, WFS).&lt;/li&gt;
+&lt;li&gt;The feature reader, and mediator components we have added to
+&lt;a class="reference external" href="https://trac.mapfish.org/trac/mapfish/browser/trunk/MapFish/client/mfbase/mapfish/widgets/data"&gt;widgets/data&lt;/a&gt;. These are core classes to bridge OpenLayers and Ext.
+And by the way, these classes will probably represent the first bits
+put in GeoExt; more on that later...&lt;/li&gt;
+&lt;li&gt;The &lt;a class="reference external" href="http://www.mapfish.org/apidoc/1.0"&gt;API doc&lt;/a&gt; that covers both MapFish Client and OpenLayers.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/p&gt;&lt;p&gt;There are other stuff in MapFish 1.0, the above are just the ones I care
+the most about.&lt;/p&gt;
+</content></entry><entry><title>This blog</title><link href="https://erilem.net/this-blog.html" rel="alternate"></link><published>2007-11-14T21:23:00+01:00</published><updated>2007-11-14T21:23:00+01:00</updated><author><name>Erilem</name></author><id>tag:erilem.net,2007-11-14:/this-blog.html</id><summary type="html">&lt;p&gt;My first post to tell what I'm up to with this blog. I'll be talking
+about technical stuff mostly related to my activities as a developer at
+Camptocamp.&lt;/p&gt;
+&lt;p&gt;Expect me to talk about &lt;a class="reference external" href="http://www.mapfish.org"&gt;MapFish&lt;/a&gt; - currently my favorite project - and
+its best friends &lt;a class="reference external" href="http://www.openlayers.org"&gt;OpenLayers&lt;/a&gt;, the &lt;a class="reference external" href="http://trac.gispython.org/"&gt;gispython&lt;/a&gt; project, and &lt;a class="reference external" href="http://pylonshq.com/"&gt;Pylons&lt;/a&gt;.
+Without these …&lt;/p&gt;</summary><content type="html">&lt;p&gt;My first post to tell what I'm up to with this blog. I'll be talking
+about technical stuff mostly related to my activities as a developer at
+Camptocamp.&lt;/p&gt;
+&lt;p&gt;Expect me to talk about &lt;a class="reference external" href="http://www.mapfish.org"&gt;MapFish&lt;/a&gt; - currently my favorite project - and
+its best friends &lt;a class="reference external" href="http://www.openlayers.org"&gt;OpenLayers&lt;/a&gt;, the &lt;a class="reference external" href="http://trac.gispython.org/"&gt;gispython&lt;/a&gt; project, and &lt;a class="reference external" href="http://pylonshq.com/"&gt;Pylons&lt;/a&gt;.
+Without these great projects, MapFish couldn't exist.&lt;/p&gt;
+&lt;p&gt;I'll also be talking about the &lt;a class="reference external" href="http://www.spatialdataintegrator.com"&gt;Spatial Data Integrator&lt;/a&gt;, an opensource
+spatial ETL.&lt;/p&gt;
+&lt;p&gt;And hopefully lots of other interesting technical stuff.&lt;/p&gt;
+</content></entry></feed>

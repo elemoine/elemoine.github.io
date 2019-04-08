@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+        <meta charset="utf-8" />
+        <title>Notes on Docker Volumes</title>
+        <link rel="stylesheet" href="https://erilem.net/theme/css/main.css" />
+        <link href="https://erilem.net/feeds/all.atom.xml" type="application/atom+xml" rel="alternate" title="Éric Lemoine Atom Feed" />
+</head>
+
+<body id="index" class="home">
+        <header id="banner" class="body">
+                <h1><a href="https://erilem.net/">Éric Lemoine </a></h1>
+                <nav><ul>
+                    <li><a href="https://erilem.net/cv/cv.en.html">Resume</a></li>
+                    <li><a href="https://erilem.net/pages/hacking.html">Hacking</a></li>
+                    <li class="active"><a href="https://erilem.net/category/blog.html">Blog</a></li>
+                </ul></nav>
+        </header><!-- /#banner -->
+<section id="content" class="body">
+  <article>
+    <header>
+      <h1 class="entry-title">
+        <a href="https://erilem.net/notes-on-docker-volumes.html" rel="bookmark"
+           title="Permalink to Notes on Docker Volumes">Notes on Docker Volumes</a></h1>
+    </header>
+
+    <div class="entry-content">
+<footer class="post-info">
+        <abbr class="published" title="2016-01-27T20:40:00+01:00">
+                Published: Wed 27 January 2016
+        </abbr>
+
+        <address class="vcard author">
+                By                         <a class="url fn" href="https://erilem.net/author/erilem.html">Erilem</a>
+        </address>
+<p>In <a href="https://erilem.net/category/blog.html">Blog</a>.</p>
+<p>tags: <a href="https://erilem.net/tag/docker.html">Docker</a> </p>
+</footer><!-- /.post-info -->      <p>Docker is popular because it's approachable and well documented.  These are not
+the only reasons for its popularity, but I think they are key bits.  For
+example, what do you want to use? <a class="reference external" href="http://libvirt.org/sources/virshcmdref/html/sect-create.html">this</a> or <a class="reference external" href="https://docs.docker.com/engine/reference/run/">that</a>?  libvirt and Docker are not
+comparable technologies, but I think you get the point.</p>
+<p>So Docker is easy!?  It's accessible, sexy and using it is immediately
+enjoyable.  But I don't think it's easy, especially when it comes to doing real
+stuff with it.</p>
+<p>I've had to use Docker Volumes lately.  Again, the Docker documentation does
+a great job at <a class="reference external" href="https://docs.docker.com/v1.8/userguide/dockervolumes/">documenting</a> volumes!  But, as
+always, there are interesting subtleties, and important differences between the
+different ways to use volumes.  And determining what type of volumes to use may
+be far from easy!</p>
+<p>Let's use this simple <tt class="docutils literal">Dockerfile</tt>:</p>
+<pre class="literal-block">
+FROM debian:latest
+
+RUN useradd user \
+    &amp;&amp; mkdir /foo \
+    &amp;&amp; touch /foo/bar \
+    &amp;&amp; chown -R user:user /foo
+
+CMD ls -lh /foo &amp;&amp; ls -ldh /foo
+
+USER user
+</pre>
+<p>This <tt class="docutils literal">Dockerfile</tt> defines an image whose base is the latest Debian image.  It
+adds a user <tt class="docutils literal">user</tt>, a directory <tt class="docutils literal">/foo</tt>, a file <tt class="docutils literal">bar</tt> in the <tt class="docutils literal">/foo</tt>
+directory and change the owner and group of the <tt class="docutils literal">/foo</tt> directory and its
+content to <tt class="docutils literal">user</tt>.  When the image is run the content of the <tt class="docutils literal">/foo</tt>
+directory is displayed, together with information (permissions, owner, group)
+about that content and the directory itself.</p>
+<p>So let's build the image:</p>
+<pre class="literal-block">
+$ docker build -t foo .
+</pre>
+<p>and run it:</p>
+<pre class="literal-block">
+$ docker run --name foo -it foo
+total 0
+-rw-r--r-- 1 user user 0 Jan 27 20:34 bar
+drwxr-xr-x 2 user user 4.0K Jan 27 20:34 /foo
+</pre>
+<p>The output of <tt class="docutils literal">docker run</tt> is as expected.  The <tt class="docutils literal">/foo</tt> directory contains
+the <tt class="docutils literal">bar</tt> file, and the owner/group of <tt class="docutils literal">/foo</tt> and <tt class="docutils literal">/foo/bar</tt> is
+<tt class="docutils literal">user</tt>/<tt class="docutils literal">user</tt>.</p>
+<p>Our container executed the two <tt class="docutils literal">ls</tt> commands and exited.  But it's still
+there.  Run <tt class="docutils literal">docker ps <span class="pre">-a</span></tt> to confirm that.</p>
+<p>So let's remove it before going further:</p>
+<pre class="literal-block">
+$ docker rm foo
+foo
+</pre>
+<p>Now let's run the image again, but using a volume <tt class="docutils literal">/foo</tt> this time:</p>
+<pre class="literal-block">
+$ docker run --name foo -it -v /foo foo
+total 0
+-rw-r--r-- 1 user user 0 Jan 27 20:34 bar
+drwxr-xr-x 2 user user 4.0K Jan 27 20:51 /foo
+</pre>
+<p>The output is the same as previously, except that the creation time of the
+<tt class="docutils literal">/foo</tt> directory has changed.  Here <tt class="docutils literal">docker run</tt> created a new directory
+for the volume, and copied the content of the image's <tt class="docutils literal">/foo</tt> directory into
+that volume directory.</p>
+<p>Let's use <tt class="docutils literal">docker volume ls</tt> to list all the existing volumes:</p>
+<pre class="literal-block">
+$ docker volume ls
+DRIVER              VOLUME NAME
+local               50de22407faecc7b0ae8cd3329e1c21a97b5f75876242e31d166bc95d24c3f1b
+</pre>
+<p>Here there is only one existing one, which is the one we just created with the
+previous <tt class="docutils literal">docker run</tt> command.</p>
+<p>To know where the volume directory is the <tt class="docutils literal">docker volume inspect</tt> command can
+be used:</p>
+<pre class="literal-block">
+$ docker volume inspect -f &quot;{{.Mountpoint}}&quot; 50de22407faecc7b0ae8cd3329e1c21a97b5f75876242e31d166bc95d24c3f1b
+/var/lib/docker/volumes/50de22407faecc7b0ae8cd3329e1c21a97b5f75876242e31d166bc95d24c3f1b/_data
+</pre>
+<p>On my system (Ubuntu) <tt class="docutils literal">/var/lib/docker/volumes</tt> is the directory where Docker
+creates the directory mount points.</p>
+<p>If we remove the container the volume will persist.  To remove volumes the
+<tt class="docutils literal">docker volume rm</tt> command is to be used:</p>
+<pre class="literal-block">
+$ docker rm foo  # remove the container first
+$ docker volume rm 50de22407faecc7b0ae8cd3329e1c21a97b5f75876242e31d166bc95d24c3f1b
+</pre>
+<p>Ok, so far so good, and I guess we haven't encountered anything unexpected.</p>
+<p>This time, we're going to mount a host directory as a volume (a.k.a. <strong>bind-mount</strong>):</p>
+<pre class="literal-block">
+$ docker run --name foo -it -v /tmp/foo:/foo foo
+total 0
+drwxr-xr-x 2 root root 4.0K Jan 27 21:19 /foo
+</pre>
+<p>Now the output of the <tt class="docutils literal">docker run</tt> command is completely different.  From the
+container's perspective the <tt class="docutils literal">/foo</tt> directory is empty, and its owner/group is
+<tt class="docutils literal">root</tt>/<tt class="docutils literal">root</tt>.</p>
+<p>Here <tt class="docutils literal">docker run</tt> bind-mounts the host directory <tt class="docutils literal">/tmp/foo</tt> into the
+container, as <tt class="docutils literal">/foo</tt> in the container.  In our case, the directory <tt class="docutils literal">/foo</tt>
+exists in the image.  The bind-mount of <tt class="docutils literal">/tmp/foo</tt> into <tt class="docutils literal">/foo</tt> hides it
+completely, which explains the different output that we obtained this time.</p>
+<p>Note that when using a bind-mount there's volume/mount point created by Docker.
+Run <tt class="docutils literal">docker volume ls</tt> if you need to be convinced:</p>
+<pre class="literal-block">
+$ docker volume ls
+</pre>
+<p>Now we're going to create a <strong>named volume</strong>:</p>
+<pre class="literal-block">
+$ docker run --name foo -it -v foo:/foo foo
+total 0
+drwxr-xr-x 2 root root 4.0K Jan 27 21:35 /foo
+</pre>
+<p>Named volumes are very similar to normal/standard volumes except that they're
+a bit different.  Note that, as when we used a bind-mount, the named volume
+<tt class="docutils literal">foo</tt> has hidden the image's <tt class="docutils literal">/foo</tt> directory.  This is why <tt class="docutils literal">docker run</tt>
+reports that the <tt class="docutils literal">/foo</tt> directory is empty and that its owner/group is
+<tt class="docutils literal">root</tt>/<tt class="docutils literal">root</tt>.  Named volumes are between standard volumes and bind-mounts.</p>
+<p>For the last example of this blog post let's create a slightly different
+<tt class="docutils literal">Dockerfile</tt>:</p>
+<pre class="literal-block">
+FROM debian:latest
+
+RUN useradd user \
+    &amp;&amp; mkdir /foo \
+    &amp;&amp; touch /foo/bar \
+    &amp;&amp; chown -R user:user /foo
+
+VOLUME /foo
+
+CMD ls -lh /foo &amp;&amp; ls -ldh /foo
+
+USER user
+</pre>
+<p>Note the <tt class="docutils literal">VOLUME /foo</tt> line.  In this case <tt class="docutils literal">docker run</tt> will create
+a volume even if no volume is specified on the command line:</p>
+<pre class="literal-block">
+$ docker run --name foo -it foo
+total 0
+-rw-r--r-- 1 user user 0 Jan 27 20:34 bar
+drwxr-xr-x 2 user user 4.0K Jan 27 21:58 /foo
+
+$ docker volume ls
+DRIVER              VOLUME NAME
+local               7f6cd56e1795ef443d03b32e01ccc672b022ce85a2ff2818072065f10554351c
+</pre>
+<p>Thanks for reading!</p>
+
+    </div><!-- /.entry-content -->
+    <div class="comments">
+      <h2>Comments !</h2>
+      <div id="disqus_thread"></div>
+      <script type="text/javascript">
+        var disqus_shortname = 'erilem';
+        var disqus_identifier = 'notes-on-docker-volumes.html';
+        var disqus_url = 'https://erilem.net/notes-on-docker-volumes.html';
+        (function() {
+        var dsq = document.createElement('script'); dsq.type = 'text/javascript'; dsq.async = true;
+        dsq.src = '//erilem.disqus.com/embed.js';
+        (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
+        })();
+      </script>
+      <noscript>Please enable JavaScript to view the comments.</noscript>
+    </div>
+
+  </article>
+</section>
+        <section id="extras" class="body">
+                <div class="social">
+                        <h2>social</h2>
+                        <ul>
+                            <li><a href="https://erilem.net/feeds/all.atom.xml" type="application/atom+xml" rel="alternate">atom feed</a></li>
+
+                            <li><a href="httsp://twitter.com/erilem">Twitter</a></li>
+                            <li><a href="https://github.com/elemoine">GitHub</a></li>
+                            <li><a href="https://plus.google.com/u/1/101823398102994275785">Google+</a></li>
+                            <li><a href="https://www.linkedin.com/in/erilem">Linkedin</a></li>
+                        </ul>
+                </div><!-- /.social -->
+        </section><!-- /#extras -->
+
+        <footer id="contentinfo" class="body">
+                <address id="about" class="vcard body">
+                Proudly powered by <a href="http://getpelican.com/">Pelican</a>, which takes great advantage of <a href="http://python.org">Python</a>.
+                </address><!-- /#about -->
+
+                <p>The theme is by <a href="http://coding.smashingmagazine.com/2009/08/04/designing-a-html-5-layout-from-scratch/">Smashing Magazine</a>, thanks!</p>
+        </footer><!-- /#contentinfo -->
+
+<script type="text/javascript">
+    var disqus_shortname = 'erilem';
+    (function () {
+        var s = document.createElement('script'); s.async = true;
+        s.type = 'text/javascript';
+        s.src = 'https://' + disqus_shortname + '.disqus.com/count.js';
+        (document.getElementsByTagName('HEAD')[0] || document.getElementsByTagName('BODY')[0]).appendChild(s);
+    }());
+</script>
+</body>
+</html>

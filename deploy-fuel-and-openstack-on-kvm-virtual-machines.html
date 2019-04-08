@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+        <meta charset="utf-8" />
+        <title>Deploy Fuel and OpenStack on KVM virtual machines</title>
+        <link rel="stylesheet" href="https://erilem.net/theme/css/main.css" />
+        <link href="https://erilem.net/feeds/all.atom.xml" type="application/atom+xml" rel="alternate" title="Éric Lemoine Atom Feed" />
+</head>
+
+<body id="index" class="home">
+        <header id="banner" class="body">
+                <h1><a href="https://erilem.net/">Éric Lemoine </a></h1>
+                <nav><ul>
+                    <li><a href="https://erilem.net/cv/cv.en.html">Resume</a></li>
+                    <li><a href="https://erilem.net/pages/hacking.html">Hacking</a></li>
+                    <li class="active"><a href="https://erilem.net/category/blog.html">Blog</a></li>
+                </ul></nav>
+        </header><!-- /#banner -->
+<section id="content" class="body">
+  <article>
+    <header>
+      <h1 class="entry-title">
+        <a href="https://erilem.net/deploy-fuel-and-openstack-on-kvm-virtual-machines.html" rel="bookmark"
+           title="Permalink to Deploy Fuel and OpenStack on KVM virtual machines">Deploy Fuel and OpenStack on KVM virtual machines</a></h1>
+    </header>
+
+    <div class="entry-content">
+<footer class="post-info">
+        <abbr class="published" title="2015-11-22T20:20:00+01:00">
+                Published: Sun 22 November 2015
+        </abbr>
+
+        <address class="vcard author">
+                By                         <a class="url fn" href="https://erilem.net/author/erilem.html">Erilem</a>
+        </address>
+<p>In <a href="https://erilem.net/category/blog.html">Blog</a>.</p>
+<p>tags: <a href="https://erilem.net/tag/openstack.html">OpenStack</a> <a href="https://erilem.net/tag/fuel.html">Fuel</a> <a href="https://erilem.net/tag/kvm.html">KVM</a> <a href="https://erilem.net/tag/mirantis.html">Mirantis</a> </p>
+</footer><!-- /.post-info -->      <p>This post provides the steps to deploy Fuel and OpenStack on KVM virtual
+machines.</p>
+<p>It is based on the <a class="reference external" href="https://docs.fuel-infra.org/fuel-dev/devops.html">Fuel devops page</a> from the official Fuel
+documentation, but uses shortcuts, and relies on <tt class="docutils literal">virtualenv</tt> as much as
+posssible (more than the official documentation does).</p>
+<p>This post is by no means a replacement for the official documentation. I wrote
+it mainly for me, from notes I took when I set up my development environment
+the very first time. I'll update this post as I discover things about
+<tt class="docutils literal"><span class="pre">fuel-devops</span></tt>.</p>
+<p>Ubuntu 14.04 (Trusty) is assumed.</p>
+<div class="section" id="install-system-packages">
+<h2>Install system packages</h2>
+<p>Run the following command to install the required system packages:</p>
+<pre class="literal-block">
+$ sudo apt-get install git postgresql postgresql-server-dev-all \
+    libyaml-dev libffi-dev python-dev qemu-kvm libvirt-bin \
+    libvirt-dev ubuntu-vm-builder bridge-utils \
+    libpq-dev libgmp-dev
+</pre>
+<p>You will also need to install <tt class="docutils literal"><span class="pre">python-pip</span></tt> and <tt class="docutils literal"><span class="pre">python-virtuaenv</span></tt> if you
+don't have <tt class="docutils literal">pip</tt> and <tt class="docutils literal">virtualenv</tt> installed:</p>
+<pre class="literal-block">
+$ sudo apt-get install python-pip python-virtualenv
+</pre>
+<p>Note: I personally install <tt class="docutils literal">pip</tt>, <tt class="docutils literal">virtualenv</tt> and <tt class="docutils literal">virtualenvwrapper</tt> to
+the user site, i.e. in <tt class="docutils literal"><span class="pre">~/.local</span></tt>. See my <a class="reference external" href="https://github.com/elemoine/dotfiles/blob/master/Makefile">dotfiles' Makefile</a> if you want to
+know how.</p>
+</div>
+<div class="section" id="create-virtual-environment">
+<h2>Create virtual environment</h2>
+<p>Create a virtual environment:</p>
+<pre class="literal-block">
+$ cd /some/path
+$ virtualenv fuel-qa
+</pre>
+</div>
+<div class="section" id="configure-libvirt-pool">
+<h2>Configure <tt class="docutils literal">libvirt</tt> pool</h2>
+<p>Create a <tt class="docutils literal">libvirt</tt> persistent pool and start it:</p>
+<pre class="literal-block">
+$ sudo virsh pool-define-as --type=dir --name=default --target=/var/lib/libvirt/images
+$ sudo virsh pool-autostart default
+$ sudo virsh pool-start default
+</pre>
+<p><tt class="docutils literal">/var/lib/libvirt/images</tt> is where QEMU QCOW images will be stored, so make
+sure this directory is attached to a file system with sufficient storage.</p>
+<p>Make your user a member of the <tt class="docutils literal">libvirtd</tt> group:</p>
+<pre class="literal-block">
+$ sudo usermod $(whoami) -a -G libvirtd
+</pre>
+<p>For your user to effectively be a member of <tt class="docutils literal">libvirt</tt> you need to create
+a new login session, implying logging out and logging in again.</p>
+</div>
+<div class="section" id="create-database-and-database-user">
+<h2>Create database and database user</h2>
+<p>Create a database and database user:</p>
+<pre class="literal-block">
+$ sudo -u postgres createuser -P fuel_devops  # use &quot;fuel_devops&quot; as the password!
+$ sudo -u postgres createdb fuel_devops -O fuel_devops
+</pre>
+</div>
+<div class="section" id="check-that-nested-kvm-is-enabled">
+<h2>Check that nested KVM is enabled</h2>
+<p>Check the following:</p>
+<pre class="literal-block">
+$ cat /etc/modprobe.d/qemu-system-x86.conf
+options kvm_intel nested=1
+</pre>
+<p>And:</p>
+<pre class="literal-block">
+$ cat /sys/module/kvm_intel/parameters/nested
+Y
+</pre>
+</div>
+<div class="section" id="create-environment-using-fuel-qa">
+<h2>Create environment using <tt class="docutils literal"><span class="pre">fuel-qa</span></tt></h2>
+<p>Clone the <tt class="docutils literal"><span class="pre">fuel-qa</span></tt> repository:</p>
+<pre class="literal-block">
+$ git clone https://github.com/openstack/fuel-qa
+$ cd fuel-qa
+$ git checkout e9e6761
+</pre>
+<p>Note that we use <a class="reference external" href="https://github.com/openstack/fuel-qa/commit/6bcec5b14d43e025021ac5ca3f896ff418660902">commit e9e6761</a>
+of <tt class="docutils literal"><span class="pre">fuel-qa</span></tt> because more recent commits do not work with Fuel 7. The
+<cite>master</cite> branch should work if you use Fuel 8 (not released at time of
+this writing).</p>
+<p>Install requirements in the virtual environment:</p>
+<pre class="literal-block">
+$ source /some/path/fuel-qa/bin/activate
+$ pip install -r ./fuelweb_test/requirements.txt
+</pre>
+<p>This, among other things, will install <tt class="docutils literal"><span class="pre">fuel-devops</span></tt> in the virtual
+environment.</p>
+<p>Now set up the database:</p>
+<pre class="literal-block">
+$ django-admin.py syncdb --settings=devops.settings
+$ django-admin.py migrate devops --settings=devops.settings
+</pre>
+</div>
+<div class="section" id="download-a-fuel-iso-image">
+<h2>Download a Fuel ISO image</h2>
+<p>The current stable version of Fuel is 7.0. The Fuel 7.0 ISO image can be
+downloaded from <a class="reference external" href="http://9f2b43d3ab92f886c3f0-e8d43ffad23ec549234584e5c62a6e24.r60.cf1.rackcdn.com/MirantisOpenStack-7.0.iso">Rackspace CDN</a>.
+The image's MD5 sum is <tt class="docutils literal">4548cc07dcf733d1a7364bf1c978590a</tt>.</p>
+</div>
+<div class="section" id="create-fuel-node">
+<h2>Create Fuel node</h2>
+<p>And run this command to create the Fuel node (a.k.a. Fuel master):</p>
+<pre class="literal-block">
+$ export NODES_COUNT=5
+$ ./utils/jenkins/system_tests.sh -t test -w $(pwd) -j fuel_test -k -K \
+    -i &lt;path_to_iso&gt; -V &lt;path_to_venv&gt; -e &lt;environment_name&gt; -o \
+    --group=prepare_release
+</pre>
+<p><tt class="docutils literal">&lt;environment_name&gt;</tt> is the name of your test environment, any name of your
+choice really. But make sure you use the same environment when running
+<tt class="docutils literal">system_tests.sh</tt> again to add nodes to the OpenStack cluster.</p>
+<p>The <tt class="docutils literal"><span class="pre">-t</span></tt> and <tt class="docutils literal"><span class="pre">-j</span></tt> flags are used to set the task name and job name,
+respectively. Really, these flag make sense when <tt class="docutils literal">system_tests.sh</tt> is run
+from Jenkins, which is how the devops team uses the script. In our case any
+value can be used for these flags, and the same values can be used for multiple
+environments.</p>
+</div>
+<div class="section" id="create-fuel-slaves">
+<h2>Create Fuel slaves</h2>
+<p>Use the following command to create four Fuel slaves (nodes that you will
+install OpenStack on):</p>
+<pre class="literal-block">
+$ ./utils/jenkins/system_tests.sh -t test -w $(pwd) -j fuel_test -k -K \
+    -i &lt;path_to_iso&gt; -V &lt;path_to_venv&gt; -e &lt;environment_name&gt; -o \
+    --group=prepare_slaves_5
+</pre>
+</div>
+<div class="section" id="connect-to-fuel-interface">
+<h2>Connect to Fuel interface</h2>
+<p>You should now have five nodes: a Fuel master node and four Fuel slave
+nodes. You can now open the Fuel UI at <a class="reference external" href="http://10.109.0.2">http://10.109.0.2</a> (admin/admin),
+create an environment and deploy OpenStack on the Fuel slave nodes.</p>
+</div>
+
+    </div><!-- /.entry-content -->
+    <div class="comments">
+      <h2>Comments !</h2>
+      <div id="disqus_thread"></div>
+      <script type="text/javascript">
+        var disqus_shortname = 'erilem';
+        var disqus_identifier = 'deploy-fuel-and-openstack-on-kvm-virtual-machines.html';
+        var disqus_url = 'https://erilem.net/deploy-fuel-and-openstack-on-kvm-virtual-machines.html';
+        (function() {
+        var dsq = document.createElement('script'); dsq.type = 'text/javascript'; dsq.async = true;
+        dsq.src = '//erilem.disqus.com/embed.js';
+        (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
+        })();
+      </script>
+      <noscript>Please enable JavaScript to view the comments.</noscript>
+    </div>
+
+  </article>
+</section>
+        <section id="extras" class="body">
+                <div class="social">
+                        <h2>social</h2>
+                        <ul>
+                            <li><a href="https://erilem.net/feeds/all.atom.xml" type="application/atom+xml" rel="alternate">atom feed</a></li>
+
+                            <li><a href="httsp://twitter.com/erilem">Twitter</a></li>
+                            <li><a href="https://github.com/elemoine">GitHub</a></li>
+                            <li><a href="https://plus.google.com/u/1/101823398102994275785">Google+</a></li>
+                            <li><a href="https://www.linkedin.com/in/erilem">Linkedin</a></li>
+                        </ul>
+                </div><!-- /.social -->
+        </section><!-- /#extras -->
+
+        <footer id="contentinfo" class="body">
+                <address id="about" class="vcard body">
+                Proudly powered by <a href="http://getpelican.com/">Pelican</a>, which takes great advantage of <a href="http://python.org">Python</a>.
+                </address><!-- /#about -->
+
+                <p>The theme is by <a href="http://coding.smashingmagazine.com/2009/08/04/designing-a-html-5-layout-from-scratch/">Smashing Magazine</a>, thanks!</p>
+        </footer><!-- /#contentinfo -->
+
+<script type="text/javascript">
+    var disqus_shortname = 'erilem';
+    (function () {
+        var s = document.createElement('script'); s.async = true;
+        s.type = 'text/javascript';
+        s.src = 'https://' + disqus_shortname + '.disqus.com/count.js';
+        (document.getElementsByTagName('HEAD')[0] || document.getElementsByTagName('BODY')[0]).appendChild(s);
+    }());
+</script>
+</body>
+</html>

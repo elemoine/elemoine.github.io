@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+        <meta charset="utf-8" />
+        <title>Éric Lemoine - OpenLayers 3</title>
+        <link rel="stylesheet" href="https://erilem.net/theme/css/main.css" />
+        <link href="https://erilem.net/feeds/all.atom.xml" type="application/atom+xml" rel="alternate" title="Éric Lemoine Atom Feed" />
+</head>
+
+<body id="index" class="home">
+        <header id="banner" class="body">
+                <h1><a href="https://erilem.net/">Éric Lemoine </a></h1>
+                <nav><ul>
+                    <li><a href="https://erilem.net/cv/cv.en.html">Resume</a></li>
+                    <li><a href="https://erilem.net/pages/hacking.html">Hacking</a></li>
+                    <li><a href="https://erilem.net/category/blog.html">Blog</a></li>
+                </ul></nav>
+        </header><!-- /#banner -->
+
+            <aside id="featured" class="body">
+                <article>
+                    <h1 class="entry-title"><a href="https://erilem.net/a-response-to-ivans-leaflet-vs-openlayers-talk.html">A response to Iván's &quot;Leaflet vs OpenLayers&quot; talk</a></h1>
+<footer class="post-info">
+        <abbr class="published" title="2015-09-21T10:36:00+02:00">
+                Published: Mon 21 September 2015
+        </abbr>
+
+        <address class="vcard author">
+                By                         <a class="url fn" href="https://erilem.net/author/erilem.html">Erilem</a>
+        </address>
+<p>In <a href="https://erilem.net/category/blog.html">Blog</a>.</p>
+<p>tags: <a href="https://erilem.net/tag/openlayers-3.html">OpenLayers 3</a> <a href="https://erilem.net/tag/leaflet.html">Leaflet</a> <a href="https://erilem.net/tag/foss4g.html">FOSS4G</a> </p>
+</footer><!-- /.post-info --><p>This blog post is a response to Iván Sánchez Ortega's &quot;Leaflet vs OpenLayers 3&quot;
+<a class="reference external" href="https://github.com/IvanSanchez/leaflet-vs-openlayers-slides">talk</a>, which he
+gave at FOSS4G Seoul. I, as an OpenLayers developer, would like to defend
+OpenLayers and provide some comments that I think are important making.</p>
+<div class="section" id="newbie-friendliness">
+<h2>Newbie Friendliness</h2>
+<p>To compare Leaflet and OpenLayers in terms of &quot;Newbie Friendliness&quot; Iván took
+the simplest tutorial of each lib and tried to create a basic OSM map centered
+on Seoul. The OpenLayers tutorial didn't make it clear that the longitude
+should come before the latitude in the array defining the view center, so Iván
+ended up with a newbie-unfriendly error message at map initialization time.</p>
+<p>The OpenLayers documentation problem has been <a class="reference external" href="https://github.com/openlayers/ol3/pull/4132">fixed</a> since then. But in general
+I agree that Leaflet is more newbie-friendly than OpenLayers. For example, the
+notion of Coordinate Reference System (CRS) is explicit in OpenLayers. This is
+because we want OpenLayers to work with Web Mercator, as well as with other
+projection systems.</p>
+<p>I also think one cannot judge friendliness with just one example. For example, it would be interesting to compare
+Leaflet and OpenLayers in terms of easiness of creating a map in a local
+projection, the Korean 2000 (<tt class="docutils literal">EPSG:5179</tt>) projection for example.</p>
+</div>
+<div class="section" id="build-sizes">
+<h2>Build sizes</h2>
+<p>Iván compares the size of minified builds (126 KB for Leaflet, versus 465 KB
+for OpenLayers). He also compares the number of classes and namespaces (52 for
+Leaflet, versus 163 for OpenLayers). Great! What does that mean? It means two
+things. (a) OpenLayers includes more built-in features than Leaflet. (b)
+OpenLayers users should create custom builds of OpenLayers, with just what
+their application needs. This cannot be stressed enough.</p>
+<p>Iván does mention custom builds in his talk. He also says that creating custom
+builds requires using the Closure Compiler, and that this may « not fit with
+your toolchain ». In fact, if you use Node/NPM in your Javascript project,
+which is what a lot of Javascript developers use these days, installing
+OpenLayers will also install
+<a class="reference external" href="https://github.com/openlayers/closure-util/">closure-util</a>, which will
+download and install the Closure Compiler for you. So if you use Node, the only
+thing you need for creating custom builds is Java (a Java Runtime Environment).</p>
+<p>And, about OpenLayers, Iván also says that « most integration tools (Angular,
+React, Polymer) or toolchains won't be able to slim it down without help ».
+I have to say that I have a hard time understanding what he means here. Do
+Angular and React include build tools that are compatible with Leaflet and not
+with OpenLayers? Sorry, I don't get it.</p>
+<p>Iván also compares the size of unminified files (223.6 KB for Leaflet, versus
+3.5 MB for OpenLayers). He's right. This is a problem, somewhat related to the
+use of the Closure Library. We are considering removing our dependency to the
+Closure Library, so we hope to fix that problem in the future.</p>
+<p>For the record, we, at Camptocamp, don't use <tt class="docutils literal"><span class="pre">ol-debug.js</span></tt> at all. Instead we
+use an auto-loading mechanism where the OpenLayers scripts are individually
+loaded based on the dependencies tree. But this is a bit advanced.</p>
+</div>
+<div class="section" id="coding-patterns">
+<h2>Coding Patterns</h2>
+<p>The OpenLayers code snippet provided by Iván could be replaced by this:</p>
+<div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">map</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">ol</span><span class="p">.</span><span class="nx">Map</span><span class="p">({</span>
+  <span class="nx">target</span><span class="o">:</span> <span class="s1">&#39;ol3map&#39;</span>
+<span class="p">});</span>
+<span class="nx">map</span><span class="p">.</span><span class="nx">addLayer</span><span class="p">(</span><span class="k">new</span> <span class="nx">ol</span><span class="p">.</span><span class="nx">layer</span><span class="p">.</span><span class="nx">Tile</span><span class="p">({</span>
+  <span class="nx">source</span><span class="o">:</span> <span class="k">new</span> <span class="nx">ol</span><span class="p">.</span><span class="nx">source</span><span class="p">.</span><span class="nx">OSM</span><span class="p">()</span>
+<span class="p">});</span>
+<span class="nx">map</span><span class="p">.</span><span class="nx">setView</span><span class="p">(</span><span class="k">new</span> <span class="nx">ol</span><span class="p">.</span><span class="nx">View</span><span class="p">({</span>
+  <span class="nx">center</span><span class="o">:</span> <span class="nx">ol</span><span class="p">.</span><span class="nx">proj</span><span class="p">.</span><span class="nx">fromLonLat</span><span class="p">([</span><span class="mi">127</span><span class="p">,</span> <span class="mi">37</span><span class="p">]),</span>
+  <span class="nx">zoom</span><span class="o">:</span> <span class="mi">8</span>
+<span class="p">});</span>
+</pre></div>
+<p>So by using a more imperative style, you can get the same indentation level as
+the Leaflet code snippet. So I find Iván's arguments rather weak.</p>
+<p>It is true that OpenLayers provides more classes, uses the Simple Features Spec
+(and GeoJSON) as the feature data model, and is generally more verbose than
+Leaflet. But this may also make your code more explicit. There are more
+important things in my opinion.</p>
+</div>
+<div class="section" id="documentation">
+<h2>Documentation</h2>
+<p>Iván is correct to note that the 125 (and counting) examples OpenLayers
+provides are an important aspect. This is what users should look at to learn
+about how to use the library. The OpenLayers development team does a good job
+at adding a new example for every new feature, and maintaining all these
+examples.</p>
+<p>It also true that OpenLayers' <a class="reference external" href="http://openlayers.org/en/master/apidoc/">API documentation</a> is verbose and imperfect, but it is
+comprehensive, always in sync with the code, and it includes relevant
+information. The OpenLayers team is committed to making the API documentation
+nicer and more convenient to users.</p>
+</div>
+<div class="section" id="map-rotation">
+<h2>Map Rotation</h2>
+<p>OpenLayers has supported map rotation from day 1. It is a core concept of
+OpenLayers. Leaflet doesn't support it. So Iván created patch for this. Kudos
+to him! To my knowledge no pull request has been created yet. And reading this
+GitHub <a class="reference external" href="https://github.com/Leaflet/Leaflet/issues/268#issuecomment-1928759">comment</a> from
+Vladimir Agafonkin I am wondering if this functionality will ever be merged in
+Leaflet. Unless Vladimir has changed his mind, which would be fine!</p>
+</div>
+<div class="section" id="d">
+<h2>3D</h2>
+<p>It's correct that OpenLayers alone doesn't support rendering 3D objects. But
+OpenLayers includes a WebGL renderer at its core, which already supports Image
+layers, Tile layers and Vector layers, although only Point geometries are
+supported at this point. So I think OpenLayers is in a good position to display
+3D objects in the future, better than Leaflet. Iván's <a class="reference external" href="https://github.com/IvanSanchez/Leaflet.gl">Leaflet.gl</a> is just a (very nice) hack at
+this point, and I don't see it being merged in Leaflet any time soon. Maybe
+another challenge Iván will accept :)</p>
+</div>
+<p>There are <a href="https://erilem.net/a-response-to-ivans-leaflet-vs-openlayers-talk.html#disqus_thread">comments</a>.</p>                </article>
+            </aside><!-- /#featured -->
+        <section id="extras" class="body">
+                <div class="social">
+                        <h2>social</h2>
+                        <ul>
+                            <li><a href="https://erilem.net/feeds/all.atom.xml" type="application/atom+xml" rel="alternate">atom feed</a></li>
+
+                            <li><a href="httsp://twitter.com/erilem">Twitter</a></li>
+                            <li><a href="https://github.com/elemoine">GitHub</a></li>
+                            <li><a href="https://plus.google.com/u/1/101823398102994275785">Google+</a></li>
+                            <li><a href="https://www.linkedin.com/in/erilem">Linkedin</a></li>
+                        </ul>
+                </div><!-- /.social -->
+        </section><!-- /#extras -->
+
+        <footer id="contentinfo" class="body">
+                <address id="about" class="vcard body">
+                Proudly powered by <a href="http://getpelican.com/">Pelican</a>, which takes great advantage of <a href="http://python.org">Python</a>.
+                </address><!-- /#about -->
+
+                <p>The theme is by <a href="http://coding.smashingmagazine.com/2009/08/04/designing-a-html-5-layout-from-scratch/">Smashing Magazine</a>, thanks!</p>
+        </footer><!-- /#contentinfo -->
+
+<script type="text/javascript">
+    var disqus_shortname = 'erilem';
+    (function () {
+        var s = document.createElement('script'); s.async = true;
+        s.type = 'text/javascript';
+        s.src = 'https://' + disqus_shortname + '.disqus.com/count.js';
+        (document.getElementsByTagName('HEAD')[0] || document.getElementsByTagName('BODY')[0]).appendChild(s);
+    }());
+</script>
+</body>
+</html>

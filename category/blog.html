@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+        <meta charset="utf-8" />
+        <title>Éric Lemoine - Blog</title>
+        <link rel="stylesheet" href="https://erilem.net/theme/css/main.css" />
+        <link href="https://erilem.net/feeds/all.atom.xml" type="application/atom+xml" rel="alternate" title="Éric Lemoine Atom Feed" />
+</head>
+
+<body id="index" class="home">
+        <header id="banner" class="body">
+                <h1><a href="https://erilem.net/">Éric Lemoine </a></h1>
+                <nav><ul>
+                    <li><a href="https://erilem.net/cv/cv.en.html">Resume</a></li>
+                    <li><a href="https://erilem.net/pages/hacking.html">Hacking</a></li>
+                    <li class="active"><a href="https://erilem.net/category/blog.html">Blog</a></li>
+                </ul></nav>
+        </header><!-- /#banner -->
+
+            <aside id="featured" class="body">
+                <article>
+                    <h1 class="entry-title"><a href="https://erilem.net/postgresql-training.html">PostgreSQL Training</a></h1>
+<footer class="post-info">
+        <abbr class="published" title="2018-06-05T20:40:00+02:00">
+                Published: Tue 05 June 2018
+        </abbr>
+
+        <address class="vcard author">
+                By                         <a class="url fn" href="https://erilem.net/author/erilem.html">Erilem</a>
+        </address>
+<p>In <a href="https://erilem.net/category/blog.html">Blog</a>.</p>
+<p>tags: <a href="https://erilem.net/tag/postgresql.html">PostgreSQL</a> <a href="https://erilem.net/tag/oslandia.html">Oslandia</a> </p>
+</footer><!-- /.post-info --><p>I just attended a 3-day training on PostgreSQL&nbsp;Administration. The training was given by Thibaud
+Walkowiak, from <a class="reference external" href="https://www.dalibo.com">Dalibo</a>. I've been using PostgreSQL for years, mainly for
+GIS-related stuff with PostGIS. And I wanted to know more about its internals and
+administration. This training's been an excellent opportunity for that!</p>
+<p>The training covered a lot of topics. My favorite were PostgreSQL's Journaling system, PITR
+(Point-In-Time Recovery) system, and MVCC (Multi-Version Concurrency Control) implementation. I like
+systems (in the broad sense), and these topics are very much system-oriented. Along the way, I've
+also learned a few psql tricks, plus system extensions, views and functions that can be very useful
+for diagnosing and troubleshooting problems.</p>
+<p>In this blog post I am going to summarize on the things I learned about Journaling, PITR, and MVCC,
+providing links to doc pages and articles I've found useful and interesting as I tried to gather
+more information and understanding on these exciting topics.</p>
+<div class="section" id="journaling">
+<h2>Journaling</h2>
+<p>PostgreSQL's Journaling system, a.k.a. WAL (Write-Ahead Logging), is what guarantees the integrity
+of the data, the durability of operations, while enabling high peformance to database users.</p>
+<p>This is how I'd summarize the functioning of Journaling in a few sentences: on a transaction commit
+data changes are recorded into the journal, and the data itself is written into PostgreSQL's memory
+(in the <em>shared buffers</em>) without actually being flushed to disk. The flushing of &quot;dirty&quot; buffers is
+done at a later time by PostgreSQL&nbsp;system processes, namely the Background Writer and the
+Checkpointer (explaining the differences between the two is beyond the scope of this post). Now, in
+the event of a crash, the database can be recovered by replaying the operations recorded in the
+journal.</p>
+<p>What's really really cool is that WAL is the basis for other cool features such as on-line backup,
+point-in-time recovery and replication! The Postgres project is indeed really good at building
+things in a gradual manner, with the low-level stuff being built first, and providing the foundation
+for higher-level features.</p>
+<p>With the hands-on exercises I discovered the <tt class="docutils literal">pg_buffercache</tt> extension. This extension allows
+getting information about all the blocks of the PostgreSQL&nbsp;instance's <em>shared buffers</em> memory. It
+tells about what objects use the blocks, what blocks are dirty, etc. For example here's a query
+that returns the 5 objects that use the most memory:</p>
+<pre class="literal-block">
+SELECT c.relname,
+           c.relkind,
+           count(*) AS buffers,
+           pg_size_pretty(count(*)*8192) as mem_size
+FROM   pg_buffercache b
+INNER JOIN pg_class c
+          ON b.relfilenode = pg_relation_filenode(c.oid)
+                AND b.reldatabase IN (0, (SELECT oid FROM pg_database
+                                                                  WHERE datname = current_database()))
+GROUP BY c.relname, c.relkind
+ORDER BY 3 DESC
+LIMIT 5 ;
+</pre>
+<p>To go further:</p>
+<ul class="simple">
+<li><a class="reference external" href="https://www.postgresql.org/docs/current/static/wal.html">Official PostgreSQL WAL documentation</a></li>
+</ul>
+</div>
+<div class="section" id="point-in-time-recovery">
+<h2>Point-In-Time Recovery</h2>
+<p>PITR is a way to back up PostgreSQL&nbsp;databases. As opposed to traditional backup strategies based on
+<tt class="docutils literal">pg_dump</tt> or similar the backup process is done continuously, greatly narrowing the data loss
+window. PITR also operates without shutting down the PostgreSQL&nbsp;instance, and with close to zero
+impact on the database users.</p>
+<p>PITR is based on the journaling system. The journals are archived in a safe location, and in the
+event of a bad operation or a data loss on the PostgreSQL&nbsp;system the data can be recovered by
+replaying the journal operations on top of a previous image of the data files. The recovery
+can be done up to a certain point in time, hence the name PITR.</p>
+<p>PITR involves two operations: the archiving of WAL files, and the copying of the data files for the
+creation of &quot;images&quot; onto which journal operations can be replayed. For the archiving of WAL files
+one can rely on the <tt class="docutils literal">archive_command</tt> (push model) or on the <tt class="docutils literal">pg_receivewal</tt> command (pull
+model). For the copying of the data files there's also two options. One can rely on the
+<tt class="docutils literal">pg_start_backup</tt> and <tt class="docutils literal">pg_stop_backup</tt> functions, and use her own tool for the actual
+copying of the data files. Or the <tt class="docutils literal">pg_basebackup</tt> tool can be used.</p>
+<p>I see PITR as very good way to achieve backups, when minimizing the data loss window is a key
+element. Using PITR is certainly more involved than just using <tt class="docutils literal">pg_dump</tt> and <tt class="docutils literal">pg_restore</tt>, but
+setting it up is not that complex really. Plus there are good tools such <em>Barman</em>, <em>pitrery</em>, and
+<em>pgBackRest</em> that simplify and streamline the PITR process. I'd definitely consider those tools
+next time I need to set up PostgreSQL database backups.</p>
+<p>To go further:</p>
+<ul class="simple">
+<li><a class="reference external" href="https://www.postgresql.org/docs/current/static/continuous-archiving.html">Official PostgreSQL PITR documentation</a></li>
+<li><a class="reference external" href="https://www.pgbarman.org/documentation/">Barman</a></li>
+<li><a class="reference external" href="https://dalibo.github.io/pitrery/">pitrery</a></li>
+<li><a class="reference external" href="https://pgbackrest.org/">pgBackRest</a></li>
+</ul>
+</div>
+<div class="section" id="mvcc">
+<h2>MVCC</h2>
+<p>MVCC means « Multi-Version Concurrency Control&nbsp;». It is the model used by PostgreSQL for
+handling data changes and transactions.</p>
+<p>Basically, in a PostgreSQL table, a record can be stored in multiple versions. A change to an
+existing record leads to the creation of a new version of that record. Similarly the deletion of
+a record leads to the creation of a new version of the record. With this mechanism transactions can
+see different versions of records, which is precisely what transactions are about.</p>
+<p>Related to MVCC&nbsp;and the transaction isolation levels are the <tt class="docutils literal">xmin</tt> and <tt class="docutils literal">xmax</tt> system columns.
+For example, let's assume you have a table named <tt class="docutils literal">t</tt> with columns <tt class="docutils literal">c1</tt> and <tt class="docutils literal">c2</tt>. In addition
+to <tt class="docutils literal">c1</tt> and <tt class="docutils literal">c2</tt> you can select the <tt class="docutils literal">xmin</tt> and <tt class="docutils literal">xmax</tt> columns. For example:</p>
+<pre class="literal-block">
+# select xmin, xmax, * from t;
+ xmin | xmax | c1 | c2
+------+------+----+---
+ 1105 |    0 | 1  |  1
+ 1105 |    0 | 2  |  2
+ 1105 |    0 | 3  |  3
+(3 rows)
+</pre>
+<p><tt class="docutils literal">xmin</tt> is the id of the transaction that created the record. <tt class="docutils literal">xmax</tt> is the id of the transaction
+that deleted the record. For example if a transaction is being deleting a record you will see this
+in another transaction:</p>
+<pre class="literal-block">
+# select xmin, xmax, * from t;
+ xmin | xmax | c1 | c2
+------+------+----+----
+ 1105 | 1106 |  1 |  1
+ 1105 |    0 |  2 |  2
+ 1105 |    0 |  3 |  3
+(3 rows)
+</pre>
+<p>Here are two rules that always apply:</p>
+<ul class="simple">
+<li>Records with <tt class="docutils literal">xmin</tt> smaller than the id of the current transaction are visible to the
+current transaction if the <tt class="docutils literal">xmin</tt> transaction was committed.</li>
+<li>Records with <tt class="docutils literal">xmax</tt> smaller that the id of the current transaction are not visible to
+the current transaction if the <tt class="docutils literal">xmax</tt> transaction was committed.</li>
+</ul>
+<p>The other cases depend on the isolation level used in the transactions.</p>
+<p>Another thing closely related to MVCC is <tt class="docutils literal">VACUUM</tt>. MVCC and the creation of new record versions
+imply that mechanisms exist to clean up &quot;dead&quot; records. A record is dead if it has a <tt class="docutils literal">xmax</tt> that
+corresponds to a transaction that was committed or rolled back, and that there's no ongoing
+transaction using that record. In old versions of PostgreSQL&nbsp;the administrator was responsible
+for setting up periodic VACUUM jobs. The PostgreSQL&nbsp;versions that everyone uses nowadays include
+an <tt class="docutils literal">autovacuum</tt> process that takes care of these periodic VACUUM operations.</p>
+<p>To go further:</p>
+<ul class="simple">
+<li><a class="reference external" href="https://www.postgresql.org/docs/current/static/transaction-iso.html">Official PostgreSQL Transaction Isolation documentation</a></li>
+<li><a class="reference external" href="https://www.postgresql.org/docs/current/static/ddl-system-columns.html">Official PostgreSQL System Columns documentation</a></li>
+<li><a class="reference external" href="http://rhaas.blogspot.com/2017/12/mvcc-and-vacuum.html">How VACUUM works</a></li>
+<li><a class="reference external" href="http://rhaas.blogspot.com/2018/01/the-state-of-vacuum.html">The State of VACUUM</a></li>
+<li><a class="reference external" href="https://begriffs.com/posts/2017-08-01-practical-guide-sql-isolation.html">A Practical Guide to SQL Transaction Isolation</a></li>
+</ul>
+</div>
+<div class="section" id="some-conclusion">
+<h2>Some conclusion</h2>
+<p>The notes in this blog post just touches the surface of the topics discussed. They also certainly
+take shortcuts. What I love about PostgreSQL&nbsp;is its transparency. In particular the excellent
+documentation is very transparent on the way PostgreSQL works internally. For example the
+<a class="reference external" href="https://github.com/pgpointcloud/pointcloud">Pointcloud extension</a> I work on defines types that
+support the <tt class="docutils literal">TOAST</tt> interface, and I've found <a class="reference external" href="https://www.postgresql.org/docs/current/static/storage-toast.html">the TOAST doc</a> very clear and informative!</p>
+<p>Keep up the good work PostgreSQL! We love you!</p>
+</div>
+<p>There are <a href="https://erilem.net/postgresql-training.html#disqus_thread">comments</a>.</p>                </article>
+            </aside><!-- /#featured -->
+                <section id="content" class="body">
+                    <h1>Other articles</h1>
+                    <hr />
+                    <ol id="posts-list" class="hfeed">
+
+            <li><article class="hentry">
+                <header>
+                    <h1><a href="https://erilem.net/back-to-gis.html" rel="bookmark"
+                           title="Permalink to Back to GIS">Back to GIS</a></h1>
+                </header>
+
+                <div class="entry-content">
+<footer class="post-info">
+        <abbr class="published" title="2017-01-10T19:00:00+01:00">
+                Published: Tue 10 January 2017
+        </abbr>
+
+        <address class="vcard author">
+                By                         <a class="url fn" href="https://erilem.net/author/erilem.html">Erilem</a>
+        </address>
+<p>In <a href="https://erilem.net/category/blog.html">Blog</a>.</p>
+<p>tags: <a href="https://erilem.net/tag/gis.html">GIS</a> <a href="https://erilem.net/tag/oslandia.html">Oslandia</a> </p>
+</footer><!-- /.post-info -->                <p>I've always been impressed by what Olivier and Vincent have built with
+<a class="reference external" href="http://www.oslandia.com">Oslandia</a>. So I am happy and excited to announce
+that I am joining the Oslandia team today!</p>
+<p><a class="reference external" href="http://mirantis.com">Mirantis</a> was a great experience. I learned many
+things. Some of the technologies I had a chance to use and get …</p>
+                <a class="readmore" href="https://erilem.net/back-to-gis.html">read more</a>
+<p>There are <a href="https://erilem.net/back-to-gis.html#disqus_thread">comments</a>.</p>                </div><!-- /.entry-content -->
+            </article></li>
+
+            <li><article class="hentry">
+                <header>
+                    <h1><a href="https://erilem.net/surveillance-de-tristan-nitot.html" rel="bookmark"
+                           title="Permalink to surveillance:// de Tristan Nitot">surveillance:// de Tristan Nitot</a></h1>
+                </header>
+
+                <div class="entry-content">
+<footer class="post-info">
+        <abbr class="published" title="2017-01-10T11:30:00+01:00">
+                Published: Tue 10 January 2017
+        </abbr>
+
+        <address class="vcard author">
+                By                         <a class="url fn" href="https://erilem.net/author/erilem.html">Erilem</a>
+        </address>
+<p>In <a href="https://erilem.net/category/blog.html">Blog</a>.</p>
+<p>tags: <a href="https://erilem.net/tag/surveillance.html">surveillance</a> </p>
+</footer><!-- /.post-info -->                <p>Comme beaucoup de libristes j'ai lu le livre <a class="reference external" href="http://standblog.org/blog/pages/Surveillance">surveillance://</a> de Tristan Nitot. C'est un bon
+livre, offrant des explications simples, concises et claires, et illustrés
+d'exemples concrets et parlants.</p>
+<p>Pour faire court le livre nous explique que certains logiciels transmettent nos
+données personnelles à des entreprises, qui peuvent les utiliser …</p>
+                <a class="readmore" href="https://erilem.net/surveillance-de-tristan-nitot.html">read more</a>
+<p>There are <a href="https://erilem.net/surveillance-de-tristan-nitot.html#disqus_thread">comments</a>.</p>                </div><!-- /.entry-content -->
+            </article></li>
+
+            <li><article class="hentry">
+                <header>
+                    <h1><a href="https://erilem.net/notes-on-the-austin-openstack-summit.html" rel="bookmark"
+                           title="Permalink to Notes on the Austin OpenStack Summit">Notes on the Austin OpenStack Summit</a></h1>
+                </header>
+
+                <div class="entry-content">
+<footer class="post-info">
+        <abbr class="published" title="2016-05-16T14:10:00+02:00">
+                Published: Mon 16 May 2016
+        </abbr>
+
+        <address class="vcard author">
+                By                         <a class="url fn" href="https://erilem.net/author/erilem.html">Erilem</a>
+        </address>
+<p>In <a href="https://erilem.net/category/blog.html">Blog</a>.</p>
+<p>tags: <a href="https://erilem.net/tag/openstack.html">OpenStack</a> </p>
+</footer><!-- /.post-info -->                <p>Three weeks ago I was in Austin (Texas, USA) for the &quot;Newton&quot; OpenStack summit.
+&quot;Newton&quot; is the name of the next OpenStack release, whose projected release
+date is October 2016. This was my very first OpenStack summit, so I thought it
+would be worth writing a few words about it …</p>
+                <a class="readmore" href="https://erilem.net/notes-on-the-austin-openstack-summit.html">read more</a>
+<p>There are <a href="https://erilem.net/notes-on-the-austin-openstack-summit.html#disqus_thread">comments</a>.</p>                </div><!-- /.entry-content -->
+            </article></li>
+
+            <li><article class="hentry">
+                <header>
+                    <h1><a href="https://erilem.net/notes-on-docker-volumes.html" rel="bookmark"
+                           title="Permalink to Notes on Docker Volumes">Notes on Docker Volumes</a></h1>
+                </header>
+
+                <div class="entry-content">
+<footer class="post-info">
+        <abbr class="published" title="2016-01-27T20:40:00+01:00">
+                Published: Wed 27 January 2016
+        </abbr>
+
+        <address class="vcard author">
+                By                         <a class="url fn" href="https://erilem.net/author/erilem.html">Erilem</a>
+        </address>
+<p>In <a href="https://erilem.net/category/blog.html">Blog</a>.</p>
+<p>tags: <a href="https://erilem.net/tag/docker.html">Docker</a> </p>
+</footer><!-- /.post-info -->                <p>Docker is popular because it's approachable and well documented.  These are not
+the only reasons for its popularity, but I think they are key bits.  For
+example, what do you want to use? <a class="reference external" href="http://libvirt.org/sources/virshcmdref/html/sect-create.html">this</a> or <a class="reference external" href="https://docs.docker.com/engine/reference/run/">that</a>?  libvirt and Docker are not
+comparable technologies, but I think you get the point …</p>
+                <a class="readmore" href="https://erilem.net/notes-on-docker-volumes.html">read more</a>
+<p>There are <a href="https://erilem.net/notes-on-docker-volumes.html#disqus_thread">comments</a>.</p>                </div><!-- /.entry-content -->
+            </article></li>
+
+            <li><article class="hentry">
+                <header>
+                    <h1><a href="https://erilem.net/from-camptocamp-to-mirantis.html" rel="bookmark"
+                           title="Permalink to From Camptocamp to Mirantis">From Camptocamp to Mirantis</a></h1>
+                </header>
+
+                <div class="entry-content">
+<footer class="post-info">
+        <abbr class="published" title="2015-12-06T21:00:00+01:00">
+                Published: Sun 06 December 2015
+        </abbr>
+
+        <address class="vcard author">
+                By                         <a class="url fn" href="https://erilem.net/author/erilem.html">Erilem</a>
+        </address>
+<p>In <a href="https://erilem.net/category/blog.html">Blog</a>.</p>
+<p>tags: <a href="https://erilem.net/tag/camptocamp.html">Camptocamp</a> <a href="https://erilem.net/tag/mirantis.html">Mirantis</a> </p>
+</footer><!-- /.post-info -->                <p>I joined Camptocamp in 2007. There I quickly became a core developer and
+project member of <a class="reference external" href="http://openlayers.org">OpenLayers</a>. I also became a lead
+developer of Camptocamp's «&nbsp;Geospatial Python team&nbsp;». I learned a lot.
+I learned about the Geospatial field, open-source communities, Python
+programming, JavaScript programming, web development, web architectures.
+The list …</p>
+                <a class="readmore" href="https://erilem.net/from-camptocamp-to-mirantis.html">read more</a>
+<p>There are <a href="https://erilem.net/from-camptocamp-to-mirantis.html#disqus_thread">comments</a>.</p>                </div><!-- /.entry-content -->
+            </article></li>
+
+            <li><article class="hentry">
+                <header>
+                    <h1><a href="https://erilem.net/deploy-fuel-and-openstack-on-kvm-virtual-machines.html" rel="bookmark"
+                           title="Permalink to Deploy Fuel and OpenStack on KVM virtual machines">Deploy Fuel and OpenStack on KVM virtual machines</a></h1>
+                </header>
+
+                <div class="entry-content">
+<footer class="post-info">
+        <abbr class="published" title="2015-11-22T20:20:00+01:00">
+                Published: Sun 22 November 2015
+        </abbr>
+
+        <address class="vcard author">
+                By                         <a class="url fn" href="https://erilem.net/author/erilem.html">Erilem</a>
+        </address>
+<p>In <a href="https://erilem.net/category/blog.html">Blog</a>.</p>
+<p>tags: <a href="https://erilem.net/tag/openstack.html">OpenStack</a> <a href="https://erilem.net/tag/fuel.html">Fuel</a> <a href="https://erilem.net/tag/kvm.html">KVM</a> <a href="https://erilem.net/tag/mirantis.html">Mirantis</a> </p>
+</footer><!-- /.post-info -->                <p>This post provides the steps to deploy Fuel and OpenStack on KVM virtual
+machines.</p>
+<p>It is based on the <a class="reference external" href="https://docs.fuel-infra.org/fuel-dev/devops.html">Fuel devops page</a> from the official Fuel
+documentation, but uses shortcuts, and relies on <tt class="docutils literal">virtualenv</tt> as much as
+posssible (more than the official documentation does).</p>
+<p>This post is by no means …</p>
+                <a class="readmore" href="https://erilem.net/deploy-fuel-and-openstack-on-kvm-virtual-machines.html">read more</a>
+<p>There are <a href="https://erilem.net/deploy-fuel-and-openstack-on-kvm-virtual-machines.html#disqus_thread">comments</a>.</p>                </div><!-- /.entry-content -->
+            </article></li>
+
+            <li><article class="hentry">
+                <header>
+                    <h1><a href="https://erilem.net/things-learned-from-the-hackers-guide-to-python.html" rel="bookmark"
+                           title="Permalink to Things learned from "The Hacker's Guide To Python"">Things learned from &quot;The Hacker's Guide To Python&quot;</a></h1>
+                </header>
+
+                <div class="entry-content">
+<footer class="post-info">
+        <abbr class="published" title="2015-10-25T10:39:00+01:00">
+                Published: Sun 25 October 2015
+        </abbr>
+
+        <address class="vcard author">
+                By                         <a class="url fn" href="https://erilem.net/author/erilem.html">Erilem</a>
+        </address>
+<p>In <a href="https://erilem.net/category/blog.html">Blog</a>.</p>
+<p>tags: <a href="https://erilem.net/tag/python.html">Python</a> <a href="https://erilem.net/tag/book.html">Book</a> </p>
+</footer><!-- /.post-info -->                <p>I just finished reading Julien Danjou's &quot;The Hacker's Guide To Python&quot; book,
+which I enjoyed a lot. This blog post is not a book review, just a summary on
+things I learned from the book.</p>
+<div class="section" id="distribution">
+<h2>Distribution</h2>
+<p>The &quot;Distribution&quot; chapter mentions the <a class="reference external" href="http://docs.openstack.org/developer/pbr/">pbr</a> tool. <tt class="docutils literal">pbr</tt> was inspired by
+<tt class="docutils literal">distutils2</tt>, which is …</p></div>
+                <a class="readmore" href="https://erilem.net/things-learned-from-the-hackers-guide-to-python.html">read more</a>
+<p>There are <a href="https://erilem.net/things-learned-from-the-hackers-guide-to-python.html#disqus_thread">comments</a>.</p>                </div><!-- /.entry-content -->
+            </article></li>
+
+            <li><article class="hentry">
+                <header>
+                    <h1><a href="https://erilem.net/a-response-to-ivans-leaflet-vs-openlayers-talk.html" rel="bookmark"
+                           title="Permalink to A response to Iván's "Leaflet vs OpenLayers" talk">A response to Iván's &quot;Leaflet vs OpenLayers&quot; talk</a></h1>
+                </header>
+
+                <div class="entry-content">
+<footer class="post-info">
+        <abbr class="published" title="2015-09-21T10:36:00+02:00">
+                Published: Mon 21 September 2015
+        </abbr>
+
+        <address class="vcard author">
+                By                         <a class="url fn" href="https://erilem.net/author/erilem.html">Erilem</a>
+        </address>
+<p>In <a href="https://erilem.net/category/blog.html">Blog</a>.</p>
+<p>tags: <a href="https://erilem.net/tag/openlayers-3.html">OpenLayers 3</a> <a href="https://erilem.net/tag/leaflet.html">Leaflet</a> <a href="https://erilem.net/tag/foss4g.html">FOSS4G</a> </p>
+</footer><!-- /.post-info -->                <p>This blog post is a response to Iván Sánchez Ortega's &quot;Leaflet vs OpenLayers 3&quot;
+<a class="reference external" href="https://github.com/IvanSanchez/leaflet-vs-openlayers-slides">talk</a>, which he
+gave at FOSS4G Seoul. I, as an OpenLayers developer, would like to defend
+OpenLayers and provide some comments that I think are important making.</p>
+<div class="section" id="newbie-friendliness">
+<h2>Newbie Friendliness</h2>
+<p>To compare Leaflet and OpenLayers in terms …</p></div>
+                <a class="readmore" href="https://erilem.net/a-response-to-ivans-leaflet-vs-openlayers-talk.html">read more</a>
+<p>There are <a href="https://erilem.net/a-response-to-ivans-leaflet-vs-openlayers-talk.html#disqus_thread">comments</a>.</p>                </div><!-- /.entry-content -->
+            </article></li>
+
+            <li><article class="hentry">
+                <header>
+                    <h1><a href="https://erilem.net/fanstatic.html" rel="bookmark"
+                           title="Permalink to Fanstatic">Fanstatic</a></h1>
+                </header>
+
+                <div class="entry-content">
+<footer class="post-info">
+        <abbr class="published" title="2011-10-15T21:08:00+02:00">
+                Published: Sat 15 October 2011
+        </abbr>
+
+        <address class="vcard author">
+                By                         <a class="url fn" href="https://erilem.net/author/erilem.html">Erilem</a>
+        </address>
+<p>In <a href="https://erilem.net/category/blog.html">Blog</a>.</p>
+
+</footer><!-- /.post-info -->                <p>A Pyramid-based framework we work on at Camptocamp uses
+<a class="reference external" href="http://docs.formalchemy.org/pyramid_formalchemy/">pyramid_formalchemy</a> and its companion module, <a class="reference external" href="http://www.gawel.org/docs/fa.jquery/">fa.jquery</a>. The
+latter relies on <a class="reference external" href="http://www.fanstatic.org">Fanstatic</a>.</p>
+<p>Fanstatic is basically a WSGI middleware that can inject script and link
+tags in HTML pages, produced deeper in the WSGI stack. Any WSGI
+application or middleware wrapped by …</p>
+                <a class="readmore" href="https://erilem.net/fanstatic.html">read more</a>
+<p>There are <a href="https://erilem.net/fanstatic.html#disqus_thread">comments</a>.</p>                </div><!-- /.entry-content -->
+            </article></li>
+                </ol><!-- /#posts-list -->
+<p class="paginator">
+    Page 1 / 3
+        <a href="https://erilem.net/category/blog2.html">&raquo;</a>
+</p>
+                </section><!-- /#content -->
+        <section id="extras" class="body">
+                <div class="social">
+                        <h2>social</h2>
+                        <ul>
+                            <li><a href="https://erilem.net/feeds/all.atom.xml" type="application/atom+xml" rel="alternate">atom feed</a></li>
+
+                            <li><a href="httsp://twitter.com/erilem">Twitter</a></li>
+                            <li><a href="https://github.com/elemoine">GitHub</a></li>
+                            <li><a href="https://plus.google.com/u/1/101823398102994275785">Google+</a></li>
+                            <li><a href="https://www.linkedin.com/in/erilem">Linkedin</a></li>
+                        </ul>
+                </div><!-- /.social -->
+        </section><!-- /#extras -->
+
+        <footer id="contentinfo" class="body">
+                <address id="about" class="vcard body">
+                Proudly powered by <a href="http://getpelican.com/">Pelican</a>, which takes great advantage of <a href="http://python.org">Python</a>.
+                </address><!-- /#about -->
+
+                <p>The theme is by <a href="http://coding.smashingmagazine.com/2009/08/04/designing-a-html-5-layout-from-scratch/">Smashing Magazine</a>, thanks!</p>
+        </footer><!-- /#contentinfo -->
+
+<script type="text/javascript">
+    var disqus_shortname = 'erilem';
+    (function () {
+        var s = document.createElement('script'); s.async = true;
+        s.type = 'text/javascript';
+        s.src = 'https://' + disqus_shortname + '.disqus.com/count.js';
+        (document.getElementsByTagName('HEAD')[0] || document.getElementsByTagName('BODY')[0]).appendChild(s);
+    }());
+</script>
+</body>
+</html>

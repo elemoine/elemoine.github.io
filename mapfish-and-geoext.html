@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+        <meta charset="utf-8" />
+        <title>MapFish and GeoExt</title>
+        <link rel="stylesheet" href="https://erilem.net/theme/css/main.css" />
+        <link href="https://erilem.net/feeds/all.atom.xml" type="application/atom+xml" rel="alternate" title="Éric Lemoine Atom Feed" />
+</head>
+
+<body id="index" class="home">
+        <header id="banner" class="body">
+                <h1><a href="https://erilem.net/">Éric Lemoine </a></h1>
+                <nav><ul>
+                    <li><a href="https://erilem.net/cv/cv.en.html">Resume</a></li>
+                    <li><a href="https://erilem.net/pages/hacking.html">Hacking</a></li>
+                    <li class="active"><a href="https://erilem.net/category/blog.html">Blog</a></li>
+                </ul></nav>
+        </header><!-- /#banner -->
+<section id="content" class="body">
+  <article>
+    <header>
+      <h1 class="entry-title">
+        <a href="https://erilem.net/mapfish-and-geoext.html" rel="bookmark"
+           title="Permalink to MapFish and GeoExt">MapFish and GeoExt</a></h1>
+    </header>
+
+    <div class="entry-content">
+<footer class="post-info">
+        <abbr class="published" title="2009-04-19T20:40:00+02:00">
+                Published: Sun 19 April 2009
+        </abbr>
+
+        <address class="vcard author">
+                By                         <a class="url fn" href="https://erilem.net/author/erilem.html">Erilem</a>
+        </address>
+<p>In <a href="https://erilem.net/category/blog.html">Blog</a>.</p>
+
+</footer><!-- /.post-info -->      <p>Matt Priour recently <a class="reference external" href="http://www.geoext.org/pipermail/users/2009-April/000045.html">asked</a> about the future of the client part of
+MapFish, and more specifically whether it will be replaced by <a class="reference external" href="http://www.geoext.org">GeoExt</a>.
+This is actually a question that every MapFish user should be asking
+:-). Anyway I thought an answer to that question could make a post on my
+blog. There it is.</p>
+<p><strong>The short story:</strong> the client part of MapFish will not be replaced by
+GeoExt.</p>
+<p><strong>Now the longer story</strong>. As of today the client part of MapFish
+includes OpenLayers, Ext, and the MapFish JavaScript lib. The latter is
+itself composed of two parts: <em>core</em> and <em>widgets</em>.</p>
+<ul class="simple">
+<li><em>core</em> includes classes that are independent of Ext; most of them
+extend OpenLayers classes like <tt class="docutils literal">OpenLayers.Control</tt>,
+<tt class="docutils literal">OpenLayers.Protocol</tt>, <tt class="docutils literal">OpenLayers.Strategy</tt>, etc. For example
+the client-side implementation of the <a class="reference external" href="http://www.mapfish.org/trac/mapfish/wiki/MapFishProtocol">MapFish Protocol</a> is part of
+<em>core</em>.</li>
+<li><em>widgets</em> includes Ext-based classes, mostly GUI components (but not
+only, the FeatureReader and stuff are part of <em>widgets</em>). <em>widgets</em>
+also has stuff that's directly related to the server side of MapFish,
+the print widgets are a good example.</li>
+</ul>
+</p><p>GeoExt will not replace <em>core</em>, nor will it replace the <em>widgets</em>
+components that rely on MapFish web services. But basically every new
+Ext-based component that isn't tied to any server-side stuff is going
+into GeoExt.</p>
+<p>In addition to OpenLayers and Ext, MapFish will include GeoExt. We had
+initially planned to integrate GeoExt into MapFish earlier, but finally
+decided to let things settle down a bit in GeoExt before doing the
+integration. We're currently doing that integration, and we will
+gradually be deprecating classes as their equivalents are added into
+GeoExt. For example, the work on FeatureRecord, FeatureReader and
+FeatureStore we've been doing in GeoExt will deprecate the
+FeatureReader, FeatureStore and LayerStoreMediator classes in the
+MapFish JavaScript lib.</p>
+<p>Also, MapFish, as a framework, aims to provide an integrated solution.
+For client-side development, this means that the developer doesn't need
+to download Ext, OpenLayers and GeoExt, install them within his
+application, and think about the organization of his application.
+Instead, we want that applications created with the MapFish framework
+are well organized from their creations; with the Ext, OpenLayers,
+GeoExt and MapFish libs ready, with the JavaScript build tool ready,
+with the unit test suite ready, etc. I guess I will cover this topic in
+a later post...</p>
+<p>Wooo, two posts in two days, scarry... :-)</p>
+
+    </div><!-- /.entry-content -->
+    <div class="comments">
+      <h2>Comments !</h2>
+      <div id="disqus_thread"></div>
+      <script type="text/javascript">
+        var disqus_shortname = 'erilem';
+        var disqus_identifier = 'mapfish-and-geoext.html';
+        var disqus_url = 'https://erilem.net/mapfish-and-geoext.html';
+        (function() {
+        var dsq = document.createElement('script'); dsq.type = 'text/javascript'; dsq.async = true;
+        dsq.src = '//erilem.disqus.com/embed.js';
+        (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
+        })();
+      </script>
+      <noscript>Please enable JavaScript to view the comments.</noscript>
+    </div>
+
+  </article>
+</section>
+        <section id="extras" class="body">
+                <div class="social">
+                        <h2>social</h2>
+                        <ul>
+                            <li><a href="https://erilem.net/feeds/all.atom.xml" type="application/atom+xml" rel="alternate">atom feed</a></li>
+
+                            <li><a href="httsp://twitter.com/erilem">Twitter</a></li>
+                            <li><a href="https://github.com/elemoine">GitHub</a></li>
+                            <li><a href="https://plus.google.com/u/1/101823398102994275785">Google+</a></li>
+                            <li><a href="https://www.linkedin.com/in/erilem">Linkedin</a></li>
+                        </ul>
+                </div><!-- /.social -->
+        </section><!-- /#extras -->
+
+        <footer id="contentinfo" class="body">
+                <address id="about" class="vcard body">
+                Proudly powered by <a href="http://getpelican.com/">Pelican</a>, which takes great advantage of <a href="http://python.org">Python</a>.
+                </address><!-- /#about -->
+
+                <p>The theme is by <a href="http://coding.smashingmagazine.com/2009/08/04/designing-a-html-5-layout-from-scratch/">Smashing Magazine</a>, thanks!</p>
+        </footer><!-- /#contentinfo -->
+
+<script type="text/javascript">
+    var disqus_shortname = 'erilem';
+    (function () {
+        var s = document.createElement('script'); s.async = true;
+        s.type = 'text/javascript';
+        s.src = 'https://' + disqus_shortname + '.disqus.com/count.js';
+        (document.getElementsByTagName('HEAD')[0] || document.getElementsByTagName('BODY')[0]).appendChild(s);
+    }());
+</script>
+</body>
+</html>

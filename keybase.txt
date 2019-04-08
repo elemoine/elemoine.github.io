@@ -1,0 +1,69 @@
+==================================================================
+https://keybase.io/elemoine
+--------------------------------------------------------------------
+
+I hereby claim:
+
+  * I am an admin of http://erilem.net
+  * I am elemoine (https://keybase.io/elemoine) on keybase.
+  * I have a public key with fingerprint F1AD 5DD0 D92F F17D 08A1  5E0B 2688 7FF0 E588 ECCD
+
+To do so, I am signing this object:
+
+{
+    "body": {
+        "key": {
+            "eldest_kid": "01017224d916c965761d5c75cedbc314a01cd9eeb6302e27c651f70e780d29836f730a",
+            "fingerprint": "f1ad5dd0d92ff17d08a15e0b26887ff0e588eccd",
+            "host": "keybase.io",
+            "key_id": "26887ff0e588eccd",
+            "kid": "01017224d916c965761d5c75cedbc314a01cd9eeb6302e27c651f70e780d29836f730a",
+            "uid": "ca0aa70a2560ac8f7a54157a4ca4f619",
+            "username": "elemoine"
+        },
+        "service": {
+            "hostname": "erilem.net",
+            "protocol": "http:"
+        },
+        "type": "web_service_binding",
+        "version": 1
+    },
+    "ctime": 1447532963,
+    "expire_in": 157680000,
+    "prev": "2e1808ee45768e72a6b6b131d65fed0358d28113e86f31bd6250717a2e764697",
+    "seqno": 4,
+    "tag": "signature"
+}
+
+which yields the signature:
+
+-----BEGIN PGP MESSAGE-----
+Version: Keybase OpenPGP v2.0.47
+Comment: https://keybase.io/crypto
+
+yMIiAnicrZJbSBVBGMfXNElJsKCIFKoluoDGzF5mdk+Xl4gopAuBllqH2Z1vT4u2
+e9yzxxSLwqIgogykkii6kN20COkOmWEXiiIqKELSInooo/uDaJdZqbcem5dhvvn9
+//P/PqY7L1PKzajoXNU71m//mHG/qzktlS5sOdYgWz6vl2MNchUMb1DNIRXGq1wu
+x2SEEaaKonETE9skOiWY6zbVbeCWrWKNIWxzE8AiKlJAoTbRsUMRUANxxTRU4lAV
+MblIdlwvAUEycL1Q2DqYcZ1zxE3FcTDlyGBYB2QpxDCo4yDQDQNsmwvhWj8VKUQ4
+i6VgluuLmjjEh+P9g//PudPDdjZDjFHEFJ0gZhsOZbqGdco0m2kOwWYEpiDw2DoQ
+NFTDOt/1QN5YJItqrWtDNNiok79E4ApmlgehUCYDP/Rtv1rU14ZhMhbJwvpkxK0H
+K/7HIW65HhdDFIJaCFKu78kxLEg7dCNLrGlUVxWTqEUy1CXdAOJuRIjODSRW9AzU
+RiMDbCADQItugCqMWMTCKuZEd4AjVTe4YmCsgkEcFVucKDqimDIFKNGISeWopxrP
+l2OaiMkSwjLlJjwWpgPR8M0blVlSRq6UPXJE9Lmk3Jz8v1/u2MlR0uUH6cq7Czob
+905varkypqZnua18ejKofz6q/hzKntR6O3GkjTcW17/vKVxdduBZx/YvT9s237vV
+NeBnVDbfbzqT1zo1KC+Yv2KytNma3+Fs2/iupyzIHLjxtfZ7047EkuKHE6YdNF78
+PNVXumFN46mRc7aMa+q/MzjTPTT7ER/z8kdvLNyxW926NK/jxLny7NGrW8dvHbxY
+sqDbLHtxz7u+aFHOm9fNltt15OaoE+3PXy2bsQ20u49L6k63WTsbvV/XDrSsXJy+
+uieHbC/Y1TXl7MS6Wx+yulVlPJ27X6qYMalPurJs3sCFH+Ut395uam443DqUfzxv
+X2HnvvNDl/p7skpT9XN3/wbrb0Ps
+=OLuh
+-----END PGP MESSAGE-----
+
+And finally, I am proving ownership of this host by posting or
+appending to this document.
+
+View my publicly-auditable identity here: https://keybase.io/elemoine
+
+==================================================================
+

@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+        <meta charset="utf-8" />
+        <title>OpenLayers sandbox dev with git svn</title>
+        <link rel="stylesheet" href="https://erilem.net/theme/css/main.css" />
+        <link href="https://erilem.net/feeds/all.atom.xml" type="application/atom+xml" rel="alternate" title="Éric Lemoine Atom Feed" />
+</head>
+
+<body id="index" class="home">
+        <header id="banner" class="body">
+                <h1><a href="https://erilem.net/">Éric Lemoine </a></h1>
+                <nav><ul>
+                    <li><a href="https://erilem.net/cv/cv.en.html">Resume</a></li>
+                    <li><a href="https://erilem.net/pages/hacking.html">Hacking</a></li>
+                    <li class="active"><a href="https://erilem.net/category/blog.html">Blog</a></li>
+                </ul></nav>
+        </header><!-- /#banner -->
+<section id="content" class="body">
+  <article>
+    <header>
+      <h1 class="entry-title">
+        <a href="https://erilem.net/openlayers-sandbox-dev-with-git-svn.html" rel="bookmark"
+           title="Permalink to OpenLayers sandbox dev with git svn">OpenLayers sandbox dev with git svn</a></h1>
+    </header>
+
+    <div class="entry-content">
+<footer class="post-info">
+        <abbr class="published" title="2010-11-10T22:17:00+01:00">
+                Published: Wed 10 November 2010
+        </abbr>
+
+        <address class="vcard author">
+                By                         <a class="url fn" href="https://erilem.net/author/erilem.html">Erilem</a>
+        </address>
+<p>In <a href="https://erilem.net/category/blog.html">Blog</a>.</p>
+
+</footer><!-- /.post-info -->      <p>I've been using git-svn for OpenLayers development for some time now.
+Although git-svn isn't so easy to work with, I'm quite happy with it for
+OpenLayers.</p>
+<p>So I have a git-svn clone of
+<tt class="docutils literal"><span class="pre">http://svn.openlayers.org/trunk/openlayers</span></tt> on my development
+machine. I use this git repository for &quot;trunk work&quot;, that is mainly for
+bug fixes meant to go to trunk. When I start working on a bug fix, I
+create a temporary branch, naming it with the id of the corresponding
+trac ticket. When I have patch reviewed and accepted, I merge the
+temporary branch into the master, dcommit, and remove the temporary
+branch.</p>
+<p>These days, I've been working on more experimental things (<em>Kinetic
+Dragging</em>). Using OpenLayers SVN sandboxes is nice for developing new
+features and experimenting, because they allow you to easily show and
+share your work. So I needed a way to have my experimental box is a
+sandbox while still managing my code with git-svn. And here's what I
+did.</p>
+<p>I started by creating a sandbox in the OpenLayers SVN repository:</p>
+<pre class="literal-block">
+$ svn cp http://svn.openlayers.org/trunk/openlayers http://svn.openlayers.org/sandbox/elemoine/kinetic
+</pre>
+<p>Then, I added a new <tt class="docutils literal"><span class="pre">svn-remote</span></tt> in my OpenLayers Git repository's
+<tt class="docutils literal">.git/config</tt>:</p>
+<pre class="literal-block">
+[svn-remote &quot;svn-kinetic&quot;]
+url = http://svn.openlayers.org/sandbox/elemoine/kinetic
+fetch = :refs/remotes/git-svn-kinetic
+</pre>
+<p>and fetched changes from that remote branch with:</p>
+<pre class="literal-block">
+$ git svn fetch svn-kinetic -r 10884
+</pre>
+<p><tt class="docutils literal">10884</tt> is the number of the SVN revision created when the sandbox directory
+was built with <tt class="docutils literal">svn cp</tt>. This command created a remote branch named
+git-svn-kinetic, and listed when entering <tt class="docutils literal">git branch <span class="pre">-r</span></tt>:</p>
+<pre class="literal-block">
+$ git branch -r
+git-svn
+git-svn-kinetic
+</pre>
+<p>Then I checked out the freshly-created remote branch, and created a
+local branch from it:</p>
+<pre class="literal-block">
+$ git checkout git-svn-kinetic
+$ git checkout -b kinetic
+</pre>
+<p>The local branch &quot;kinetic&quot; is bound to the remote branch &quot;git-svn-kinetic&quot;, and
+&quot;git svn dcommit&quot; commands done with the &quot;kinetic&quot; branch checked out go to
+<a class="reference external" href="http://svn.openlayers.org/sandbox/elemoine/kinetic">http://svn.openlayers.org/sandbox/elemoine/kinetic</a>, which is exactly what
+I want.</p>
+
+    </div><!-- /.entry-content -->
+    <div class="comments">
+      <h2>Comments !</h2>
+      <div id="disqus_thread"></div>
+      <script type="text/javascript">
+        var disqus_shortname = 'erilem';
+        var disqus_identifier = 'openlayers-sandbox-dev-with-git-svn.html';
+        var disqus_url = 'https://erilem.net/openlayers-sandbox-dev-with-git-svn.html';
+        (function() {
+        var dsq = document.createElement('script'); dsq.type = 'text/javascript'; dsq.async = true;
+        dsq.src = '//erilem.disqus.com/embed.js';
+        (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
+        })();
+      </script>
+      <noscript>Please enable JavaScript to view the comments.</noscript>
+    </div>
+
+  </article>
+</section>
+        <section id="extras" class="body">
+                <div class="social">
+                        <h2>social</h2>
+                        <ul>
+                            <li><a href="https://erilem.net/feeds/all.atom.xml" type="application/atom+xml" rel="alternate">atom feed</a></li>
+
+                            <li><a href="httsp://twitter.com/erilem">Twitter</a></li>
+                            <li><a href="https://github.com/elemoine">GitHub</a></li>
+                            <li><a href="https://plus.google.com/u/1/101823398102994275785">Google+</a></li>
+                            <li><a href="https://www.linkedin.com/in/erilem">Linkedin</a></li>
+                        </ul>
+                </div><!-- /.social -->
+        </section><!-- /#extras -->
+
+        <footer id="contentinfo" class="body">
+                <address id="about" class="vcard body">
+                Proudly powered by <a href="http://getpelican.com/">Pelican</a>, which takes great advantage of <a href="http://python.org">Python</a>.
+                </address><!-- /#about -->
+
+                <p>The theme is by <a href="http://coding.smashingmagazine.com/2009/08/04/designing-a-html-5-layout-from-scratch/">Smashing Magazine</a>, thanks!</p>
+        </footer><!-- /#contentinfo -->
+
+<script type="text/javascript">
+    var disqus_shortname = 'erilem';
+    (function () {
+        var s = document.createElement('script'); s.async = true;
+        s.type = 'text/javascript';
+        s.src = 'https://' + disqus_shortname + '.disqus.com/count.js';
+        (document.getElementsByTagName('HEAD')[0] || document.getElementsByTagName('BODY')[0]).appendChild(s);
+    }());
+</script>
+</body>
+</html>

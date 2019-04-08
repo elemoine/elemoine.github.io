@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+        <meta charset="utf-8" />
+        <title>Éric Lemoine - geoext</title>
+        <link rel="stylesheet" href="https://erilem.net/theme/css/main.css" />
+        <link href="https://erilem.net/feeds/all.atom.xml" type="application/atom+xml" rel="alternate" title="Éric Lemoine Atom Feed" />
+</head>
+
+<body id="index" class="home">
+        <header id="banner" class="body">
+                <h1><a href="https://erilem.net/">Éric Lemoine </a></h1>
+                <nav><ul>
+                    <li><a href="https://erilem.net/cv/cv.en.html">Resume</a></li>
+                    <li><a href="https://erilem.net/pages/hacking.html">Hacking</a></li>
+                    <li><a href="https://erilem.net/category/blog.html">Blog</a></li>
+                </ul></nav>
+        </header><!-- /#banner -->
+
+            <aside id="featured" class="body">
+                <article>
+                    <h1 class="entry-title"><a href="https://erilem.net/testing.html">Testing</a></h1>
+<footer class="post-info">
+        <abbr class="published" title="2009-06-30T11:37:00+02:00">
+                Published: Tue 30 June 2009
+        </abbr>
+
+        <address class="vcard author">
+                By                         <a class="url fn" href="https://erilem.net/author/erilem.html">Erilem</a>
+        </address>
+<p>In <a href="https://erilem.net/category/blog.html">Blog</a>.</p>
+<p>tags: <a href="https://erilem.net/tag/geoext.html">geoext</a> <a href="https://erilem.net/tag/mapfish.html">mapfish</a> <a href="https://erilem.net/tag/openlayers.html">openlayers</a> <a href="https://erilem.net/tag/programming.html">programming</a> <a href="https://erilem.net/tag/testing.html">testing</a> </p>
+</footer><!-- /.post-info --><p>I've been reading about testing. Here are a few words on my thoughts
+about testing.</p>
+<p>From my reading and understanding there are three types of tests:</p>
+<ul class="simple">
+<li>Unit tests: a unit test tests a single function (e.g. an object
+method). A unit test must take care of isolating the tested function
+from the functions the tested function normally relies on (when
+executed outside any test).</li>
+<li>Integration tests: an integration test tests if two or more dependent
+functions correctly work together.</li>
+<li>User-acceptance tests: a user-acceptance tests whether a given
+function provides the behavior its users expect. User Interface tests
+belong to this type.</li>
+</ul>
+</p><p>These three types of tests are complementary, they all have their
+importance when testing an application.</p>
+<p>In OpenLayers, GeoExt, and MapFish (its JavaScript library), we provide
+unit and integration tests, and actually don't distinguish whether
+they're of the unit or integration type (they're all referred to as unit
+tests, which is fine I think). Not providing user-acceptance tests makes
+sense, as OpenLayers, GeoExt and MapFish are libraries as opposed to
+applications. The three libraries come with examples that in some way
+are user-acceptance tests. (In OpenLayers we've attempted to create
+actual user-acceptance tests, but developpers haven't paid much
+attention to them, possibly their scopes and goals haven't been well
+defined.)</p>
+<p>Applications built with OpenLayers and/or GeoExt and/or MapFish
+instantiate classes from these libraries. Often, most of their code
+doesn't include actual logic, and from that regard writing unit and
+integration tests for such applications doesn't make sense. However, as
+User Interfaces, these applications would deserve user-acceptance tests.</p>
+<p>Providing automated User Interface tests is in my opinion a very
+difficult task, and I'd be very interested in having feedback from
+others on that.</p>
+<p>There are <a href="https://erilem.net/testing.html#disqus_thread">comments</a>.</p>                </article>
+            </aside><!-- /#featured -->
+        <section id="extras" class="body">
+                <div class="social">
+                        <h2>social</h2>
+                        <ul>
+                            <li><a href="https://erilem.net/feeds/all.atom.xml" type="application/atom+xml" rel="alternate">atom feed</a></li>
+
+                            <li><a href="httsp://twitter.com/erilem">Twitter</a></li>
+                            <li><a href="https://github.com/elemoine">GitHub</a></li>
+                            <li><a href="https://plus.google.com/u/1/101823398102994275785">Google+</a></li>
+                            <li><a href="https://www.linkedin.com/in/erilem">Linkedin</a></li>
+                        </ul>
+                </div><!-- /.social -->
+        </section><!-- /#extras -->
+
+        <footer id="contentinfo" class="body">
+                <address id="about" class="vcard body">
+                Proudly powered by <a href="http://getpelican.com/">Pelican</a>, which takes great advantage of <a href="http://python.org">Python</a>.
+                </address><!-- /#about -->
+
+                <p>The theme is by <a href="http://coding.smashingmagazine.com/2009/08/04/designing-a-html-5-layout-from-scratch/">Smashing Magazine</a>, thanks!</p>
+        </footer><!-- /#contentinfo -->
+
+<script type="text/javascript">
+    var disqus_shortname = 'erilem';
+    (function () {
+        var s = document.createElement('script'); s.async = true;
+        s.type = 'text/javascript';
+        s.src = 'https://' + disqus_shortname + '.disqus.com/count.js';
+        (document.getElementsByTagName('HEAD')[0] || document.getElementsByTagName('BODY')[0]).appendChild(s);
+    }());
+</script>
+</body>
+</html>

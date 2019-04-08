@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+        <meta charset="utf-8" />
+        <title>Éric Lemoine - Python</title>
+        <link rel="stylesheet" href="https://erilem.net/theme/css/main.css" />
+        <link href="https://erilem.net/feeds/all.atom.xml" type="application/atom+xml" rel="alternate" title="Éric Lemoine Atom Feed" />
+</head>
+
+<body id="index" class="home">
+        <header id="banner" class="body">
+                <h1><a href="https://erilem.net/">Éric Lemoine </a></h1>
+                <nav><ul>
+                    <li><a href="https://erilem.net/cv/cv.en.html">Resume</a></li>
+                    <li><a href="https://erilem.net/pages/hacking.html">Hacking</a></li>
+                    <li><a href="https://erilem.net/category/blog.html">Blog</a></li>
+                </ul></nav>
+        </header><!-- /#banner -->
+
+            <aside id="featured" class="body">
+                <article>
+                    <h1 class="entry-title"><a href="https://erilem.net/things-learned-from-the-hackers-guide-to-python.html">Things learned from &quot;The Hacker's Guide To Python&quot;</a></h1>
+<footer class="post-info">
+        <abbr class="published" title="2015-10-25T10:39:00+01:00">
+                Published: Sun 25 October 2015
+        </abbr>
+
+        <address class="vcard author">
+                By                         <a class="url fn" href="https://erilem.net/author/erilem.html">Erilem</a>
+        </address>
+<p>In <a href="https://erilem.net/category/blog.html">Blog</a>.</p>
+<p>tags: <a href="https://erilem.net/tag/python.html">Python</a> <a href="https://erilem.net/tag/book.html">Book</a> </p>
+</footer><!-- /.post-info --><p>I just finished reading Julien Danjou's &quot;The Hacker's Guide To Python&quot; book,
+which I enjoyed a lot. This blog post is not a book review, just a summary on
+things I learned from the book.</p>
+<div class="section" id="distribution">
+<h2>Distribution</h2>
+<p>The &quot;Distribution&quot; chapter mentions the <a class="reference external" href="http://docs.openstack.org/developer/pbr/">pbr</a> tool. <tt class="docutils literal">pbr</tt> was inspired by
+<tt class="docutils literal">distutils2</tt>, which is now abandonned.</p>
+<p>Using <tt class="docutils literal">pbr</tt> the package developer describes the package in a <tt class="docutils literal">setup.cfg</tt>
+file and the use the following in <tt class="docutils literal">setup.py</tt>:</p>
+<div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">setuptools</span>
+
+<span class="n">setuptools</span><span class="o">.</span><span class="n">setup</span><span class="p">(</span><span class="n">setup_requires</span><span class="o">=</span><span class="p">[</span><span class="s1">&#39;pbr&#39;</span><span class="p">],</span> <span class="n">pbr</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>
+</pre></div>
+<p>But <tt class="docutils literal">pbr</tt> offers more features than this, including reading dependencies from
+<tt class="docutils literal">requirements.txt</tt>,  generating <tt class="docutils literal">autodoc</tt> stub files, generating
+<tt class="docutils literal">AUTHORS</tt> and <tt class="docutils literal">ChangeLog</tt> files from <tt class="docutils literal">git log</tt>, reading the
+<tt class="docutils literal">long_description</tt> from the project's <tt class="docutils literal">README</tt> file, managing version
+numbers based on Git tags and revisions.</p>
+<p><tt class="docutils literal">pbr</tt> was initially developed inside the OpenStack project, but it sounds
+like it can be useful for other Python projects. I'll consider it in the
+future.</p>
+</div>
+<div class="section" id="unit-testing">
+<h2>Unit Testing</h2>
+<p>The &quot;Unit Testing&quot; chapter covers well-known test-related tools and libraries
+like <a class="reference external" href="https://docs.python.org/3/library/unittest.html">unittest</a> , <a class="reference external" href="https://docs.python.org/dev/library/unittest.mock.html">mock</a>, <a class="reference external" href="http://nose.readthedocs.org/en/latest/">nose</a>, and <a class="reference external" href="https://pypi.python.org/pypi/fixtures">fixtures</a>.  It also covers other interesting
+tools that I didn't know before, namely <a class="reference external" href="https://pypi.python.org/pypi/python-subunit">subunit</a> and <a class="reference external" href="http://testrepository.readthedocs.org/en/latest/">testrepository</a>.</p>
+<p><tt class="docutils literal">subunit</tt> is a Python module that provides a streaming protocol for test
+results. Using <tt class="docutils literal">subunit</tt> test results may be aggregated from different from
+different machines. Test runs may be recorded and replayed later.</p>
+<p>The <tt class="docutils literal">testrepository</tt> package makes it possible to store a <tt class="docutils literal">subunit</tt> stream
+and then manipulate it using the <tt class="docutils literal">testr</tt> command. Here is a quick example:</p>
+<div class="highlight"><pre><span></span>$ <span class="nb">cd</span> my_python_package
+$ testr init
+$ touch .testr.conf
+$ python -m subunit.run tests.test_functions <span class="p">|</span> testr load
+Ran <span class="m">4</span> tests in <span class="m">0</span>.002s
+PASSED <span class="o">(</span><span class="nv">id</span><span class="o">=</span><span class="m">0</span><span class="o">)</span>
+$ testr failing
+PASSED <span class="o">(</span><span class="nv">id</span><span class="o">=</span><span class="m">0</span><span class="o">)</span>
+$ testr last
+Ran <span class="m">4</span> tests in <span class="m">0</span>.002s
+PASSED <span class="o">(</span><span class="nv">id</span><span class="o">=</span><span class="m">0</span><span class="o">)</span>
+$ testr stats
+<span class="nv">runs</span><span class="o">=</span><span class="m">1</span>
+</pre></div>
+<p>This only scratches the surface of what can be done with <tt class="docutils literal">subunit</tt> and
+<tt class="docutils literal">testrepository</tt>. For example <tt class="docutils literal">testrepository</tt> has support for running
+tests in parallel, in isolated environments such as chroots, containers or
+separate machines. I need to do more research to fully understand the
+benefits of using <tt class="docutils literal">subunit</tt> and <tt class="docutils literal">testrepository</tt>.</p>
+</div>
+<div class="section" id="methods-and-decorators">
+<h2>Methods and decorators</h2>
+<div class="section" id="bound-unbound-methods">
+<h3>Bound/Unbound methods</h3>
+<p>The &quot;Methods and decorators&quot; chapter of the book includes a section explaining
+&quot;how methods work in Python&quot;.</p>
+<p>I've learned from this section that, in contrast to Python 2, Python 3 allows
+passing any object to an <em>unbound</em> method. Let's consider this simple class for
+example:</p>
+<div class="highlight"><pre><span></span><span class="k">class</span> <span class="nc">Python</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">version</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">version</span> <span class="o">=</span> <span class="n">version</span>
+    <span class="k">def</span> <span class="nf">get_version</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">version</span>
+</pre></div>
+<p>The following works both with Python 2 and 3:</p>
+<div class="highlight"><pre><span></span><span class="n">Python</span><span class="o">.</span><span class="n">get_version</span><span class="p">(</span><span class="n">Python</span><span class="p">(</span><span class="mi">3</span><span class="p">))</span>
+</pre></div>
+<p>But the following only works with Python 3:</p>
+<div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">collections</span> <span class="kn">import</span> <span class="n">namedtuple</span>
+<span class="n">PythonLike</span> <span class="o">=</span> <span class="n">namedtuple</span><span class="p">(</span><span class="s1">&#39;PythonLike&#39;</span><span class="p">,</span> <span class="p">[</span><span class="s1">&#39;version&#39;</span><span class="p">])</span>
+
+<span class="n">Python</span><span class="o">.</span><span class="n">get_version</span><span class="p">(</span><span class="n">PythonLike</span><span class="p">(</span><span class="mi">3</span><span class="p">))</span>
+</pre></div>
+<p>With Python 2 the (unbound) <tt class="docutils literal">get_version</tt> function must be called with
+a <tt class="docutils literal">Python</tt> instance as its first argument. While with Python 3 the
+<tt class="docutils literal">get_version</tt> function may be called with any object with a <tt class="docutils literal">version</tt>
+property. So Python 3 is more permissive and flexible here.</p>
+</div>
+<div class="section" id="super-is-your-friend">
+<h3><tt class="docutils literal">super()</tt> is your friend</h3>
+<p>The &quot;Methods and decorators&quot; chapter also includes a section &quot;The truth about
+<strong>super</strong>&quot; that I found… intriguing. So I went back to the roots, and (re-)read
+the official docs for <a class="reference external" href="https://docs.python.org/3/library/functions.html#super">super()</a>. The official docs
+include a link to a very informative <a class="reference external" href="https://rhettinger.wordpress.com/2011/05/26/super-considered-super/">blog post</a> about
+<tt class="docutils literal">super()</tt>. Read that blog post and you'll understand that the type to which
+<tt class="docutils literal">super()</tt> delegates is computed at runtime.  This will explain why you should
+always use <tt class="docutils literal">super()</tt>.</p>
+</div>
+</div>
+<div class="section" id="the-ast">
+<h2>The AST</h2>
+<p>The &quot;The AST&quot; chapter talks about Python's Abstract Syntax Tree, and presents
+the <tt class="docutils literal">ast</tt> module, which applications may use to create and process trees of
+the Python abstract syntax grammar.</p>
+<p>Two practical cases are presented.</p>
+<p>First the author teaches us how to use <tt class="docutils literal">ast</tt> to create an a <a class="reference external" href="https://flake8.readthedocs.org/en/2.4.1/">flake8</a> extension. The extension checks
+that each method not decorated with <tt class="docutils literal">&#64;staticmethod</tt> has at least of one
+argument, and that the method actually uses its first argument. If the first
+argument is not used then it means that function should be decorated with
+<tt class="docutils literal">&#64;staticmethod</tt>. Check out this <a class="reference external" href="https://julien.danjou.info/blog/2015/python-ast-checking-method-declaration">blog post from Julien</a>
+if you want to know more about that extension. The blog post covers it all.</p>
+<p>The other practical case presented is nothing more than the <a class="reference external" href="http://docs.hylang.org/en/latest/language/index.html">Hy Programming
+Language</a>. Hy is a Lisp
+dialect that parses a Lisp-like language and converts it to a standard Python
+AST. Hy is very cool! It's a good way for Python developers to discover Lisp.</p>
+<p>Guess what the following Hy program does:</p>
+<div class="highlight"><pre><span></span><span class="p">(</span><span class="nv">list-comp</span>
+  <span class="p">(</span><span class="o">,</span> <span class="nv">x</span> <span class="nv">y</span><span class="p">)</span>
+  <span class="p">(</span><span class="nv">x</span> <span class="p">(</span><span class="nv">range</span> <span class="mi">8</span><span class="p">)</span>
+   <span class="nv">y</span> <span class="s">&quot;ABCDEFGH&quot;</span><span class="p">))</span>
+</pre></div>
+</div>
+<div class="section" id="performances-and-optimizations">
+<h2>Performances and optimizations</h2>
+<p>The &quot;Performance and optimizations&quot; chapter includes a section discussing
+<em>slots</em> and <tt class="docutils literal">Namedtuple</tt>.</p>
+<p>You may know that you can use <em>slots</em> to save memory:</p>
+<div class="highlight"><pre><span></span><span class="k">class</span> <span class="nc">Point</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+    <span class="vm">__slots__</span> <span class="o">=</span> <span class="p">(</span><span class="s1">&#39;x&#39;</span><span class="p">,</span> <span class="s1">&#39;y&#39;</span><span class="p">)</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">x</span> <span class="o">=</span> <span class="n">x</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">y</span> <span class="o">=</span> <span class="n">y</span>
+</pre></div>
+<p><tt class="docutils literal">__slots__</tt> lists the properties allowed for instances of the class. When
+slots are defined the object attributes are stored in a list instead of the
+<tt class="docutils literal">__dict__</tt> dictionary, which saves memory.</p>
+<p>I knew all this already. What I didn't know is that types created with the
+<tt class="docutils literal">namedtuple()</tt> factory have <tt class="docutils literal">__slots__</tt> set to <tt class="docutils literal">()</tt> (the empty tuple).
+So using a named tuple type is almost as efficient as using a class with
+<tt class="docutils literal">__slots__</tt> in terms of memory usage.</p>
+<div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">collections</span> <span class="kn">import</span> <span class="n">namedtuple</span>
+
+<span class="n">Point</span> <span class="o">=</span> <span class="n">namedtuple</span><span class="p">(</span><span class="s1">&#39;Point&#39;</span><span class="p">,</span> <span class="p">[</span><span class="s1">&#39;x&#39;</span><span class="p">,</span> <span class="s1">&#39;y&#39;</span><span class="p">])</span>
+<span class="k">assert</span> <span class="n">Point</span><span class="o">.</span><span class="vm">__slots__</span> <span class="ow">is</span> <span class="p">()</span>
+</pre></div>
+</div>
+<div class="section" id="rdbms-and-orm">
+<h2>RDBMS&nbsp;and ORM</h2>
+<p>The &quot;RDBMS&nbsp;and ORM&quot; shows how to &quot;stream data with Flask and PostgreSQL&quot;.  More
+specifically this demonstrates how to use PostgreSQL's <a class="reference external" href="http://www.postgresql.org/docs/current/static/sql-notify.html">NOTIFY</a> and <a class="reference external" href="http://www.postgresql.org/docs/current/static/sql-listen.html">LISTEN</a> commands
+together with <a class="reference external" href="https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events/Using_server-sent_events">server-sent events</a>
+(SSE) in a <a class="reference external" href="http://flask.pocoo.org/">Flask</a> project to push data to the browser.
+What's nice is to see how PostgreSQL, SSE and Flask make this easy and
+straightforward!</p>
+</div>
+<p>There are <a href="https://erilem.net/things-learned-from-the-hackers-guide-to-python.html#disqus_thread">comments</a>.</p>                </article>
+            </aside><!-- /#featured -->
+                <section id="content" class="body">
+                    <h1>Other articles</h1>
+                    <hr />
+                    <ol id="posts-list" class="hfeed">
+
+            <li><article class="hentry">
+                <header>
+                    <h1><a href="https://erilem.net/y-combinator.html" rel="bookmark"
+                           title="Permalink to Y Combinator">Y Combinator</a></h1>
+                </header>
+
+                <div class="entry-content">
+<footer class="post-info">
+        <abbr class="published" title="2009-07-02T19:08:00+02:00">
+                Published: Thu 02 July 2009
+        </abbr>
+
+        <address class="vcard author">
+                By                         <a class="url fn" href="https://erilem.net/author/erilem.html">Erilem</a>
+        </address>
+<p>In <a href="https://erilem.net/category/blog.html">Blog</a>.</p>
+<p>tags: <a href="https://erilem.net/tag/functional-programming.html">functional programming</a> <a href="https://erilem.net/tag/python.html">python</a> </p>
+</footer><!-- /.post-info -->                <p>I've been reading &quot;The Little Schemer&quot; from Daniel P. Friedman and
+Matthias Felleisen. Very interesting reading.</p>
+<p>The nineth chapter introduces the Y Combinator function, a pretty
+interesting beast! Quoting <a class="reference external" href="http://www.crockford.com/javascript/little.html">Crockford</a>: &quot;one of the most strange and
+wonderful artifacts of Computer Science&quot;. As a primer, here's how the Y
+Combinator looks …</p>
+                <a class="readmore" href="https://erilem.net/y-combinator.html">read more</a>
+<p>There are <a href="https://erilem.net/y-combinator.html#disqus_thread">comments</a>.</p>                </div><!-- /.entry-content -->
+            </article></li>
+                </ol><!-- /#posts-list -->
+                </section><!-- /#content -->
+        <section id="extras" class="body">
+                <div class="social">
+                        <h2>social</h2>
+                        <ul>
+                            <li><a href="https://erilem.net/feeds/all.atom.xml" type="application/atom+xml" rel="alternate">atom feed</a></li>
+
+                            <li><a href="httsp://twitter.com/erilem">Twitter</a></li>
+                            <li><a href="https://github.com/elemoine">GitHub</a></li>
+                            <li><a href="https://plus.google.com/u/1/101823398102994275785">Google+</a></li>
+                            <li><a href="https://www.linkedin.com/in/erilem">Linkedin</a></li>
+                        </ul>
+                </div><!-- /.social -->
+        </section><!-- /#extras -->
+
+        <footer id="contentinfo" class="body">
+                <address id="about" class="vcard body">
+                Proudly powered by <a href="http://getpelican.com/">Pelican</a>, which takes great advantage of <a href="http://python.org">Python</a>.
+                </address><!-- /#about -->
+
+                <p>The theme is by <a href="http://coding.smashingmagazine.com/2009/08/04/designing-a-html-5-layout-from-scratch/">Smashing Magazine</a>, thanks!</p>
+        </footer><!-- /#contentinfo -->
+
+<script type="text/javascript">
+    var disqus_shortname = 'erilem';
+    (function () {
+        var s = document.createElement('script'); s.async = true;
+        s.type = 'text/javascript';
+        s.src = 'https://' + disqus_shortname + '.disqus.com/count.js';
+        (document.getElementsByTagName('HEAD')[0] || document.getElementsByTagName('BODY')[0]).appendChild(s);
+    }());
+</script>
+</body>
+</html>

@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+        <meta charset="utf-8" />
+        <title>Éric Lemoine - javascript</title>
+        <link rel="stylesheet" href="https://erilem.net/theme/css/main.css" />
+        <link href="https://erilem.net/feeds/all.atom.xml" type="application/atom+xml" rel="alternate" title="Éric Lemoine Atom Feed" />
+</head>
+
+<body id="index" class="home">
+        <header id="banner" class="body">
+                <h1><a href="https://erilem.net/">Éric Lemoine </a></h1>
+                <nav><ul>
+                    <li><a href="https://erilem.net/cv/cv.en.html">Resume</a></li>
+                    <li><a href="https://erilem.net/pages/hacking.html">Hacking</a></li>
+                    <li><a href="https://erilem.net/category/blog.html">Blog</a></li>
+                </ul></nav>
+        </header><!-- /#banner -->
+
+            <aside id="featured" class="body">
+                <article>
+                    <h1 class="entry-title"><a href="https://erilem.net/server-side-openlayers.html">Server-side OpenLayers</a></h1>
+<footer class="post-info">
+        <abbr class="published" title="2010-03-14T10:28:00+01:00">
+                Published: Sun 14 March 2010
+        </abbr>
+
+        <address class="vcard author">
+                By                         <a class="url fn" href="https://erilem.net/author/erilem.html">Erilem</a>
+        </address>
+<p>In <a href="https://erilem.net/category/blog.html">Blog</a>.</p>
+<p>tags: <a href="https://erilem.net/tag/javascript.html">javascript</a> <a href="https://erilem.net/tag/node.html">node</a> <a href="https://erilem.net/tag/openlayers.html">openlayers</a> </p>
+</footer><!-- /.post-info --><p>I've been interested in server-side JavaScript lately. As a proof of
+feasibility (to myself) I've put together a node.js-based web service
+that gets geographic objects from PostGIS and provides a GeoJSON
+representation of these objects.</p>
+<p>For this I've used node.js, postgres-js and OpenLayers.</p>
+<p><a class="reference external" href="http://nodejs.org">node.js</a> is a lib whose goal is &quot;to provide an easy way to build
+scalable network applications&quot;. node.js relies on an event-driven
+architecture (through epoll, kqueue, /dev/poll, or select). I'd
+recommend looking at the <a class="reference external" href="http://s3.amazonaws.com/four.livejournal/20091117/jsconf.pdf">jsconf slides</a> to know more about the
+philosophy and design of node.js.</p>
+<p>The &quot;Hello World&quot; node.js web service looks like that:</p>
+<div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">sys</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s1">&#39;sys&#39;</span><span class="p">),</span>
+    <span class="nx">http</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s1">&#39;http&#39;</span><span class="p">);</span>
+
+<span class="nx">http</span><span class="p">.</span><span class="nx">createServer</span><span class="p">(</span><span class="kd">function</span> <span class="p">(</span><span class="nx">req</span><span class="p">,</span> <span class="nx">res</span><span class="p">)</span> <span class="p">{</span>
+    <span class="nx">res</span><span class="p">.</span><span class="nx">writeHead</span><span class="p">(</span><span class="mi">200</span><span class="p">,</span> <span class="p">{</span><span class="s1">&#39;Content-Type&#39;</span><span class="o">:</span> <span class="s1">&#39;text/plain&#39;</span><span class="p">});</span>
+    <span class="nx">res</span><span class="p">.</span><span class="nx">write</span><span class="p">(</span><span class="s1">&#39;Hello World&#39;</span><span class="p">);</span>
+    <span class="nx">res</span><span class="p">.</span><span class="nx">close</span><span class="p">();</span>
+<span class="p">}).</span><span class="nx">listen</span><span class="p">(</span><span class="mi">8000</span><span class="p">);</span>
+
+<span class="nx">sys</span><span class="p">.</span><span class="nx">puts</span><span class="p">(</span><span class="s1">&#39;Server running at http://127.0.0.1:8000/&#39;</span><span class="p">);</span>
+</pre></div>
+<p>Thanks to node.js's nice interface I think the code is pretty much
+self-explained.</p>
+<p>Assuming the above code is included in a file named <em>file.js</em>, starting
+the web service is done with:</p>
+<pre class="literal-block">
+$ node file.js
+</pre>
+<p>Now we can use <a class="reference external" href="http://github.com/creationix/postgres-js">postgres-js</a> to read data from a PostGIS table.
+postgres-js sends SQL queries to PostgreSQL through TCP. postgres-js is
+a node.js module, so it can be loaded with <tt class="docutils literal">require()</tt> (just like the
+built-in <em>sys</em> and <em>http</em> modules).</p>
+<div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">sys</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s1">&#39;sys&#39;</span><span class="p">),</span>
+    <span class="nx">http</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s1">&#39;http&#39;</span><span class="p">),</span>
+    <span class="nx">Postgres</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s1">&#39;postgres&#39;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">db</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">Postgres</span><span class="p">.</span><span class="nx">Connection</span><span class="p">(</span><span class="s2">&quot;dbname&quot;</span><span class="p">,</span> <span class="s2">&quot;username&quot;</span><span class="p">,</span> <span class="s2">&quot;password&quot;</span><span class="p">);</span>
+
+<span class="nx">http</span><span class="p">.</span><span class="nx">createServer</span><span class="p">(</span><span class="kd">function</span> <span class="p">(</span><span class="nx">req</span><span class="p">,</span> <span class="nx">res</span><span class="p">)</span> <span class="p">{</span>
+    <span class="nx">db</span><span class="p">.</span><span class="nx">query</span><span class="p">(</span><span class="s2">&quot;SELECT name, astext(geom) AS geom FROM table&quot;</span><span class="p">,</span> <span class="kd">function</span> <span class="p">(</span><span class="nx">objs</span><span class="p">)</span> <span class="p">{</span>
+        <span class="nx">res</span><span class="p">.</span><span class="nx">writeHead</span><span class="p">(</span><span class="mi">200</span><span class="p">,</span> <span class="p">{</span><span class="s1">&#39;Content-Type&#39;</span><span class="o">:</span> <span class="s1">&#39;text/plain&#39;</span><span class="p">});</span>
+        <span class="nx">res</span><span class="p">.</span><span class="nx">write</span><span class="p">(</span><span class="s2">&quot;it works&quot;</span><span class="p">);</span>
+        <span class="nx">res</span><span class="p">.</span><span class="nx">close</span><span class="p">();</span>
+    <span class="p">});</span>
+<span class="p">}).</span><span class="nx">listen</span><span class="p">(</span><span class="mi">8000</span><span class="p">);</span>
+
+<span class="nx">sys</span><span class="p">.</span><span class="nx">puts</span><span class="p">(</span><span class="s1">&#39;Server running at http://127.0.0.1:8000/&#39;</span><span class="p">);</span>
+</pre></div>
+<p>The last step involves using <a class="reference external" href="http://www.openlayers.org">OpenLayers</a> for deserializing from WKT
+and serializing to GeoJSON. To use OpenLayers in the node.js
+application, and load it with the <tt class="docutils literal">require()</tt> function, I packaged
+OpenLayers as a node.js module. It was easy enough, see the <a class="reference external" href="http://nodejs.org/api.html#_modules">modules
+doc</a>.</p>
+<p>And here's the final code:</p>
+<div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">sys</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s1">&#39;sys&#39;</span><span class="p">),</span>
+    <span class="nx">http</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s1">&#39;http&#39;</span><span class="p">),</span>
+    <span class="nx">Postgres</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s1">&#39;postgres&#39;</span><span class="p">),</span>
+    <span class="nx">OpenLayers</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s1">&#39;openlayers&#39;</span><span class="p">).</span><span class="nx">OpenLayers</span><span class="p">;</span>
+
+<span class="kd">var</span> <span class="nx">db</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">Postgres</span><span class="p">.</span><span class="nx">Connection</span><span class="p">(</span><span class="s2">&quot;dbname&quot;</span><span class="p">,</span> <span class="s2">&quot;username&quot;</span><span class="p">,</span> <span class="s2">&quot;password&quot;</span><span class="p">);</span>
+
+<span class="nx">http</span><span class="p">.</span><span class="nx">createServer</span><span class="p">(</span><span class="kd">function</span> <span class="p">(</span><span class="nx">req</span><span class="p">,</span> <span class="nx">res</span><span class="p">)</span> <span class="p">{</span>
+    <span class="nx">db</span><span class="p">.</span><span class="nx">query</span><span class="p">(</span><span class="s2">&quot;SELECT name, astext(geom) AS geom FROM table&quot;</span><span class="p">,</span> <span class="kd">function</span> <span class="p">(</span><span class="nx">objs</span><span class="p">)</span> <span class="p">{</span>
+        <span class="kd">var</span> <span class="nx">features</span> <span class="o">=</span> <span class="p">[];</span>
+        <span class="kd">var</span> <span class="nx">wkt</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">OpenLayers</span><span class="p">.</span><span class="nx">Format</span><span class="p">.</span><span class="nx">WKT</span><span class="p">();</span>
+        <span class="k">for</span><span class="p">(</span><span class="kd">var</span> <span class="nx">i</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span><span class="nx">len</span><span class="o">=</span><span class="nx">objs</span><span class="p">.</span><span class="nx">length</span><span class="p">;</span> <span class="nx">i</span><span class="o">&lt;</span><span class="nx">len</span><span class="p">;</span> <span class="nx">i</span><span class="o">++</span><span class="p">)</span> <span class="p">{</span>
+            <span class="nx">features</span><span class="p">.</span><span class="nx">push</span><span class="p">(</span>
+                <span class="k">new</span> <span class="nx">OpenLayers</span><span class="p">.</span><span class="nx">Feature</span><span class="p">.</span><span class="nx">Vector</span><span class="p">(</span>
+                    <span class="nx">wkt</span><span class="p">.</span><span class="nx">read</span><span class="p">(</span><span class="nx">obj</span><span class="p">[</span><span class="nx">i</span><span class="p">].</span><span class="nx">geom</span><span class="p">).</span><span class="nx">geometry</span><span class="p">,</span> <span class="p">{</span><span class="nx">name</span><span class="o">:</span> <span class="nx">obj</span><span class="p">[</span><span class="nx">i</span><span class="p">].</span><span class="nx">name</span><span class="p">}</span>
+                <span class="p">)</span>
+            <span class="p">);</span>
+        <span class="p">}</span>
+        <span class="kd">var</span> <span class="nx">geojson</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">OpenLayers</span><span class="p">.</span><span class="nx">Format</span><span class="p">.</span><span class="nx">GeoJSON</span><span class="p">();</span>
+        <span class="kd">var</span> <span class="nx">output</span> <span class="o">=</span> <span class="nx">geojson</span><span class="p">.</span><span class="nx">write</span><span class="p">(</span><span class="nx">features</span><span class="p">);</span>
+        <span class="nx">res</span><span class="p">.</span><span class="nx">writeHead</span><span class="p">(</span><span class="mi">200</span><span class="p">,</span> <span class="p">{</span><span class="s1">&#39;Content-Type&#39;</span><span class="o">:</span> <span class="s1">&#39;application/json&#39;</span><span class="p">});</span>
+        <span class="nx">res</span><span class="p">.</span><span class="nx">write</span><span class="p">(</span><span class="nx">output</span><span class="p">);</span>
+        <span class="nx">res</span><span class="p">.</span><span class="nx">close</span><span class="p">();</span>
+    <span class="p">});</span>
+<span class="p">}).</span><span class="nx">listen</span><span class="p">(</span><span class="mi">8000</span><span class="p">);</span>
+
+<span class="nx">sys</span><span class="p">.</span><span class="nx">puts</span><span class="p">(</span><span class="s1">&#39;Server running at http://127.0.0.1:8000/&#39;</span><span class="p">);</span>
+</pre></div>
+<p>The End. Happy server-side JavaScript to all.</p>
+<p>There are <a href="https://erilem.net/server-side-openlayers.html#disqus_thread">comments</a>.</p>                </article>
+            </aside><!-- /#featured -->
+        <section id="extras" class="body">
+                <div class="social">
+                        <h2>social</h2>
+                        <ul>
+                            <li><a href="https://erilem.net/feeds/all.atom.xml" type="application/atom+xml" rel="alternate">atom feed</a></li>
+
+                            <li><a href="httsp://twitter.com/erilem">Twitter</a></li>
+                            <li><a href="https://github.com/elemoine">GitHub</a></li>
+                            <li><a href="https://plus.google.com/u/1/101823398102994275785">Google+</a></li>
+                            <li><a href="https://www.linkedin.com/in/erilem">Linkedin</a></li>
+                        </ul>
+                </div><!-- /.social -->
+        </section><!-- /#extras -->
+
+        <footer id="contentinfo" class="body">
+                <address id="about" class="vcard body">
+                Proudly powered by <a href="http://getpelican.com/">Pelican</a>, which takes great advantage of <a href="http://python.org">Python</a>.
+                </address><!-- /#about -->
+
+                <p>The theme is by <a href="http://coding.smashingmagazine.com/2009/08/04/designing-a-html-5-layout-from-scratch/">Smashing Magazine</a>, thanks!</p>
+        </footer><!-- /#contentinfo -->
+
+<script type="text/javascript">
+    var disqus_shortname = 'erilem';
+    (function () {
+        var s = document.createElement('script'); s.async = true;
+        s.type = 'text/javascript';
+        s.src = 'https://' + disqus_shortname + '.disqus.com/count.js';
+        (document.getElementsByTagName('HEAD')[0] || document.getElementsByTagName('BODY')[0]).appendChild(s);
+    }());
+</script>
+</body>
+</html>

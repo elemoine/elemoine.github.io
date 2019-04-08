@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+        <meta charset="utf-8" />
+        <title>Secure TileCache With Pylons and Repoze</title>
+        <link rel="stylesheet" href="https://erilem.net/theme/css/main.css" />
+        <link href="https://erilem.net/feeds/all.atom.xml" type="application/atom+xml" rel="alternate" title="Éric Lemoine Atom Feed" />
+</head>
+
+<body id="index" class="home">
+        <header id="banner" class="body">
+                <h1><a href="https://erilem.net/">Éric Lemoine </a></h1>
+                <nav><ul>
+                    <li><a href="https://erilem.net/cv/cv.en.html">Resume</a></li>
+                    <li><a href="https://erilem.net/pages/hacking.html">Hacking</a></li>
+                    <li class="active"><a href="https://erilem.net/category/blog.html">Blog</a></li>
+                </ul></nav>
+        </header><!-- /#banner -->
+<section id="content" class="body">
+  <article>
+    <header>
+      <h1 class="entry-title">
+        <a href="https://erilem.net/secure-tilecache-with-pylons-and-repoze.html" rel="bookmark"
+           title="Permalink to Secure TileCache With Pylons and Repoze">Secure TileCache With Pylons and Repoze</a></h1>
+    </header>
+
+    <div class="entry-content">
+<footer class="post-info">
+        <abbr class="published" title="2009-02-15T18:14:00+01:00">
+                Published: Sun 15 February 2009
+        </abbr>
+
+        <address class="vcard author">
+                By                         <a class="url fn" href="https://erilem.net/author/erilem.html">Erilem</a>
+        </address>
+<p>In <a href="https://erilem.net/category/blog.html">Blog</a>.</p>
+
+</footer><!-- /.post-info -->      <p>This post shows how one can secure TileCache with Pylons and Repoze.</p>
+<p>In a Pylons application one can run a WSGI application from within a
+controller action. Here is a simple example:</p>
+<div class="highlight"><pre><span></span><span class="k">class</span> <span class="nc">MainController</span><span class="p">(</span><span class="n">BaseController</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">action</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">environ</span><span class="p">,</span> <span class="n">start_response</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">wsgiApp</span><span class="p">(</span><span class="n">environ</span><span class="p">,</span> <span class="n">start_response</span><span class="p">)</span>
+</pre></div>
+<p><a class="reference external" href="http://tilecache.org/">TileCache</a> is commonly run from within <tt class="docutils literal">mod_python</tt>. TileCache can
+also be run as a WSGI application, therefore it can be run from within
+the controller action of a Pylons application. Here's how:</p>
+<div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">TileCache.Service</span> <span class="kn">import</span> <span class="n">wsgiApp</span>
+
+<span class="k">class</span> <span class="nc">MainController</span><span class="p">(</span><span class="n">BaseController</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">tilecache</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">environ</span><span class="p">,</span> <span class="n">start_response</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">wsgiApp</span><span class="p">(</span><span class="n">environ</span><span class="p">,</span> <span class="n">start_response</span><span class="p">)</span>
+</pre></div>
+<p>Pretty cool... But it gets really interesting when <em>repoze.what</em> is
+added to the picture. For those who don't know repoze.what, repoze.what
+is an authorization framework for WSGI applications. repoze.what now
+provides a Pylons <a class="reference external" href="http://code.gustavonarea.net/repoze.what-pylons/Manual/index.html">plugin</a>, making it easy to protect controllers and
+controller actions in a Pylons application. Here's how our tilecache
+action can be protected:</p>
+<div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">TileCache.Service</span> <span class="kn">import</span> <span class="n">wsgiApp</span>
+<span class="kn">from</span> <span class="nn">repoze.what.predicates</span> <span class="kn">import</span> <span class="n">has_permission</span>
+<span class="kn">from</span> <span class="nn">repoze.what.plugins.pylonshq</span> <span class="kn">import</span> <span class="n">ActionProtector</span>
+
+<span class="k">class</span> <span class="nc">MainController</span><span class="p">(</span><span class="n">BaseController</span><span class="p">)</span>
+
+    <span class="nd">@ActionProtector</span><span class="p">(</span><span class="n">has_permission</span><span class="p">(</span><span class="s1">&#39;tilecache&#39;</span><span class="p">))</span>
+    <span class="k">def</span> <span class="nf">tilecache</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">environ</span><span class="p">,</span> <span class="n">start_response</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">wsgiApp</span><span class="p">(</span><span class="n">environ</span><span class="p">,</span> <span class="n">start_response</span><span class="p">)</span>
+</pre></div>
+<p>With the above, anyone who tries to access <tt class="docutils literal">/tilecache</tt> will have to
+be granted the <em>tilecache</em> permission. Otherwise, authorization will be
+denied.</p>
+<p>TileCache is secured!</p>
+<p>People often want finer-grained authorization, like give certain users
+access to certain layers. With Pylons' routing system this can be easily
+and elegantly achieved using repoze.what, I will show that in a later
+post.</p>
+
+    </div><!-- /.entry-content -->
+    <div class="comments">
+      <h2>Comments !</h2>
+      <div id="disqus_thread"></div>
+      <script type="text/javascript">
+        var disqus_shortname = 'erilem';
+        var disqus_identifier = 'secure-tilecache-with-pylons-and-repoze.html';
+        var disqus_url = 'https://erilem.net/secure-tilecache-with-pylons-and-repoze.html';
+        (function() {
+        var dsq = document.createElement('script'); dsq.type = 'text/javascript'; dsq.async = true;
+        dsq.src = '//erilem.disqus.com/embed.js';
+        (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
+        })();
+      </script>
+      <noscript>Please enable JavaScript to view the comments.</noscript>
+    </div>
+
+  </article>
+</section>
+        <section id="extras" class="body">
+                <div class="social">
+                        <h2>social</h2>
+                        <ul>
+                            <li><a href="https://erilem.net/feeds/all.atom.xml" type="application/atom+xml" rel="alternate">atom feed</a></li>
+
+                            <li><a href="httsp://twitter.com/erilem">Twitter</a></li>
+                            <li><a href="https://github.com/elemoine">GitHub</a></li>
+                            <li><a href="https://plus.google.com/u/1/101823398102994275785">Google+</a></li>
+                            <li><a href="https://www.linkedin.com/in/erilem">Linkedin</a></li>
+                        </ul>
+                </div><!-- /.social -->
+        </section><!-- /#extras -->
+
+        <footer id="contentinfo" class="body">
+                <address id="about" class="vcard body">
+                Proudly powered by <a href="http://getpelican.com/">Pelican</a>, which takes great advantage of <a href="http://python.org">Python</a>.
+                </address><!-- /#about -->
+
+                <p>The theme is by <a href="http://coding.smashingmagazine.com/2009/08/04/designing-a-html-5-layout-from-scratch/">Smashing Magazine</a>, thanks!</p>
+        </footer><!-- /#contentinfo -->
+
+<script type="text/javascript">
+    var disqus_shortname = 'erilem';
+    (function () {
+        var s = document.createElement('script'); s.async = true;
+        s.type = 'text/javascript';
+        s.src = 'https://' + disqus_shortname + '.disqus.com/count.js';
+        (document.getElementsByTagName('HEAD')[0] || document.getElementsByTagName('BODY')[0]).appendChild(s);
+    }());
+</script>
+</body>
+</html>

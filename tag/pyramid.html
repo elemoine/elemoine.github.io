@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+        <meta charset="utf-8" />
+        <title>Éric Lemoine - pyramid</title>
+        <link rel="stylesheet" href="https://erilem.net/theme/css/main.css" />
+        <link href="https://erilem.net/feeds/all.atom.xml" type="application/atom+xml" rel="alternate" title="Éric Lemoine Atom Feed" />
+</head>
+
+<body id="index" class="home">
+        <header id="banner" class="body">
+                <h1><a href="https://erilem.net/">Éric Lemoine </a></h1>
+                <nav><ul>
+                    <li><a href="https://erilem.net/cv/cv.en.html">Resume</a></li>
+                    <li><a href="https://erilem.net/pages/hacking.html">Hacking</a></li>
+                    <li><a href="https://erilem.net/category/blog.html">Blog</a></li>
+                </ul></nav>
+        </header><!-- /#banner -->
+
+            <aside id="featured" class="body">
+                <article>
+                    <h1 class="entry-title"><a href="https://erilem.net/papyrus.html">Papyrus</a></h1>
+<footer class="post-info">
+        <abbr class="published" title="2011-07-09T07:25:00+02:00">
+                Published: Sat 09 July 2011
+        </abbr>
+
+        <address class="vcard author">
+                By                         <a class="url fn" href="https://erilem.net/author/erilem.html">Erilem</a>
+        </address>
+<p>In <a href="https://erilem.net/category/blog.html">Blog</a>.</p>
+<p>tags: <a href="https://erilem.net/tag/papyrus.html">papyrus</a> <a href="https://erilem.net/tag/pyramid.html">pyramid</a> </p>
+</footer><!-- /.post-info --><p>A few days ago I pushed <a class="reference external" href="https://github.com/elemoine/papyrus_mapproxy">papyrus_mapproxy</a> on Github. The objective of
+papyrus_mapproxy is to make it easy to embed <a class="reference external" href="http://mapproxy.org/">MapProxy</a> in <a class="reference external" href="http://docs.pylonsproject.org/docs/pyramid.html">Pyramid</a>
+apps.</p>
+<p>This new module is a good opportunity for me to describe what I've been
+up to with Papyrus.</p>
+<p>I have developed five Papyrus modules: papyrus, papyrus_tilecache,
+papyrus_mapproxy, papyrus_ogcproxy, and papyrus_mapnik. The last four
+are companion modules for the first one.</p>
+<p>I wrote these modules to learn Pyramid, and assess its extensibility,
+with the goal to eventually provide extensions that will ease the work
+of Pyramid developers working on mapping apps.</p>
+<p>The main module, <a class="reference external" href="https://github.com/elemoine/papyrus">papyrus</a>, provides conveniences for creating feature
+web services. For example, it provides a GeoJSON renderer, and a full
+implementation of the <a class="reference external" href="http://trac.mapfish.org/trac/mapfish/wiki/MapFishProtocol">MapFish Protocol</a>.</p>
+<p>The <a class="reference external" href="https://github.com/elemoine/papyrus_tilecache">papyrus_tilecache</a> and <a class="reference external" href="https://github.com/elemoine/papyrus_mapproxy">pyramid_mapproxy</a> modules make it easy
+to embed <a class="reference external" href="http://tilecache.org/">TileCache</a> and MapProxy in Pyramid apps, respectively.</p>
+<p>The <a class="reference external" href="https://github.com/elemoine/papyrus_mapnik">papyrus_mapnik</a> module aims to ease using <a class="reference external" href="http://mapnik.org/">Mapnik</a> in Pyramid
+apps. This module is experimental, and would need some work to be
+actually useful.</p>
+<p>The <a class="reference external" href="https://github.com/elemoine/papyrus_ogcproxy">papyrus_ogcproxy</a> provides a proxy service for OGC protocols. It
+was developed for working around the Same Origin Policy implemented in
+browsers.</p>
+<p>I believe there's high value in embedding services, like tile rendering
+and caching services, in the web application. That can greatly ease
+deployment. It also allows leveraging transverse layers of the
+application, like the security layer.</p>
+<p>Building a consistent, well integrated, and scalable application that
+requires external independent services is, to say the least, a big
+challenge I think. Assembling different types of services within a
+single application, relying on horizontal scaling, is much more
+appealing to me.</p>
+<p>Anyway, any feedback on Papyrus is welcome!</p>
+<p>There are <a href="https://erilem.net/papyrus.html#disqus_thread">comments</a>.</p>                </article>
+            </aside><!-- /#featured -->
+        <section id="extras" class="body">
+                <div class="social">
+                        <h2>social</h2>
+                        <ul>
+                            <li><a href="https://erilem.net/feeds/all.atom.xml" type="application/atom+xml" rel="alternate">atom feed</a></li>
+
+                            <li><a href="httsp://twitter.com/erilem">Twitter</a></li>
+                            <li><a href="https://github.com/elemoine">GitHub</a></li>
+                            <li><a href="https://plus.google.com/u/1/101823398102994275785">Google+</a></li>
+                            <li><a href="https://www.linkedin.com/in/erilem">Linkedin</a></li>
+                        </ul>
+                </div><!-- /.social -->
+        </section><!-- /#extras -->
+
+        <footer id="contentinfo" class="body">
+                <address id="about" class="vcard body">
+                Proudly powered by <a href="http://getpelican.com/">Pelican</a>, which takes great advantage of <a href="http://python.org">Python</a>.
+                </address><!-- /#about -->
+
+                <p>The theme is by <a href="http://coding.smashingmagazine.com/2009/08/04/designing-a-html-5-layout-from-scratch/">Smashing Magazine</a>, thanks!</p>
+        </footer><!-- /#contentinfo -->
+
+<script type="text/javascript">
+    var disqus_shortname = 'erilem';
+    (function () {
+        var s = document.createElement('script'); s.async = true;
+        s.type = 'text/javascript';
+        s.src = 'https://' + disqus_shortname + '.disqus.com/count.js';
+        (document.getElementsByTagName('HEAD')[0] || document.getElementsByTagName('BODY')[0]).appendChild(s);
+    }());
+</script>
+</body>
+</html>

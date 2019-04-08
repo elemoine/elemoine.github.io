@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+        <meta charset="utf-8" />
+        <title>Function decorators in JavaScript</title>
+        <link rel="stylesheet" href="https://erilem.net/theme/css/main.css" />
+        <link href="https://erilem.net/feeds/all.atom.xml" type="application/atom+xml" rel="alternate" title="Éric Lemoine Atom Feed" />
+</head>
+
+<body id="index" class="home">
+        <header id="banner" class="body">
+                <h1><a href="https://erilem.net/">Éric Lemoine </a></h1>
+                <nav><ul>
+                    <li><a href="https://erilem.net/cv/cv.en.html">Resume</a></li>
+                    <li><a href="https://erilem.net/pages/hacking.html">Hacking</a></li>
+                    <li class="active"><a href="https://erilem.net/category/blog.html">Blog</a></li>
+                </ul></nav>
+        </header><!-- /#banner -->
+<section id="content" class="body">
+  <article>
+    <header>
+      <h1 class="entry-title">
+        <a href="https://erilem.net/function-decorators-in-javascript.html" rel="bookmark"
+           title="Permalink to Function decorators in JavaScript">Function decorators in JavaScript</a></h1>
+    </header>
+
+    <div class="entry-content">
+<footer class="post-info">
+        <abbr class="published" title="2010-08-02T06:42:00+02:00">
+                Published: Mon 02 August 2010
+        </abbr>
+
+        <address class="vcard author">
+                By                         <a class="url fn" href="https://erilem.net/author/erilem.html">Erilem</a>
+        </address>
+<p>In <a href="https://erilem.net/category/blog.html">Blog</a>.</p>
+
+</footer><!-- /.post-info -->      <p>I've been looking at how to implement function decorators in JavaScript.
+The FireFox Sync extension (<a class="reference external" href="http://hg.mozilla.org/services/fx-sync">http://hg.mozilla.org/services/fx-sync</a>)
+provides a nice implementation. I'm going to describe that
+implementation in this post.</p>
+<p>So let's assume we have an application with &quot;classes&quot; (constructors and
+prototypes, really), and we always want the same behavior when
+exceptions occur in these classes' methods.</p>
+<p>Our classes look like:</p>
+<div class="highlight"><pre><span></span><span class="nx">MyCtor</span> <span class="o">=</span> <span class="kd">function</span><span class="p">()</span> <span class="p">{};</span>
+<span class="nx">MyCtor</span><span class="p">.</span><span class="nx">prototype</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="nx">method</span><span class="o">:</span> <span class="kd">function</span><span class="p">(</span><span class="nx">a</span><span class="p">,</span> <span class="nx">b</span><span class="p">)</span> <span class="p">{</span>
+        <span class="c1">// do something with a and b</span>
+    <span class="p">}</span>
+<span class="p">};</span>
+</pre></div>
+<p>The common behavior is implemented at a single place in a decorator
+function:</p>
+<div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">decorators</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="k">catch</span><span class="o">:</span> <span class="kd">function</span><span class="p">(</span><span class="nx">f</span><span class="p">)</span> <span class="p">{</span>
+        <span class="k">return</span> <span class="kd">function</span><span class="p">()</span> <span class="p">{</span>
+            <span class="k">try</span> <span class="p">{</span>
+                <span class="nx">f</span><span class="p">();</span>
+            <span class="p">}</span> <span class="k">catch</span><span class="p">(</span><span class="nx">e</span><span class="p">)</span> <span class="p">{</span>
+                <span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="nx">e</span><span class="p">);</span>
+            <span class="p">}</span>
+        <span class="p">};</span>
+    <span class="p">}</span>
+<span class="p">};</span>
+</pre></div>
+<p><tt class="docutils literal">decorators.catch</tt> is the decorator function. It returns a function
+that executes the decorated function (<tt class="docutils literal">f</tt>) in a try/catch block and
+logs a message if an exception occurs.</p>
+<p>Decorating <tt class="docutils literal">method</tt> with decorators.catch is done as follows:</p>
+<div class="highlight"><pre><span></span><span class="nx">MyCtor</span><span class="p">.</span><span class="nx">prototype</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="nx">method</span><span class="o">:</span> <span class="kd">function</span><span class="p">(</span><span class="nx">a</span><span class="p">,</span> <span class="nx">b</span><span class="p">)</span>
+        <span class="nx">decorators</span><span class="p">.</span><span class="k">catch</span><span class="p">(</span><span class="kd">function</span><span class="p">()</span> <span class="p">{</span>
+            <span class="c1">// do something with a and b</span>
+        <span class="p">})()</span>
+<span class="p">};</span>
+</pre></div>
+<p><tt class="docutils literal">method</tt> now calls our decorator, and the actual logic of the method is moved
+in an anonymous function passed to the decorator. The anonymous function can
+still access the arguments <tt class="docutils literal">a</tt> and <tt class="docutils literal">b</tt> thanks to the closure.</p>
+<p>You may be wondering why <tt class="docutils literal">decorators.catch</tt> delegates the decoration to an
+inner function as opposed to doing it itself. This is to be able to chain
+decoration. For example:</p>
+<div class="highlight"><pre><span></span> <span class="nx">MyCtor</span><span class="p">.</span><span class="nx">prototype</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="nx">method</span><span class="o">:</span> <span class="kd">function</span><span class="p">(</span><span class="nx">a</span><span class="p">,</span> <span class="nx">b</span><span class="p">)</span>
+        <span class="nx">decorators</span><span class="p">.</span><span class="nx">lock</span><span class="p">(</span><span class="nx">decorators</span><span class="p">.</span><span class="k">catch</span><span class="p">(</span><span class="kd">function</span><span class="p">()</span> <span class="p">{</span>
+            <span class="c1">// do something with a and b</span>
+        <span class="p">}))()</span>
+<span class="p">};</span>
+</pre></div>
+<p>where <tt class="docutils literal">decorators.lock</tt> would be a new decorator of ours.</p>
+<p>I guess there are other ways to implement function decorators in
+JavaScript. I find this one is simple and elegant.</p>
+
+    </div><!-- /.entry-content -->
+    <div class="comments">
+      <h2>Comments !</h2>
+      <div id="disqus_thread"></div>
+      <script type="text/javascript">
+        var disqus_shortname = 'erilem';
+        var disqus_identifier = 'function-decorators-in-javascript.html';
+        var disqus_url = 'https://erilem.net/function-decorators-in-javascript.html';
+        (function() {
+        var dsq = document.createElement('script'); dsq.type = 'text/javascript'; dsq.async = true;
+        dsq.src = '//erilem.disqus.com/embed.js';
+        (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
+        })();
+      </script>
+      <noscript>Please enable JavaScript to view the comments.</noscript>
+    </div>
+
+  </article>
+</section>
+        <section id="extras" class="body">
+                <div class="social">
+                        <h2>social</h2>
+                        <ul>
+                            <li><a href="https://erilem.net/feeds/all.atom.xml" type="application/atom+xml" rel="alternate">atom feed</a></li>
+
+                            <li><a href="httsp://twitter.com/erilem">Twitter</a></li>
+                            <li><a href="https://github.com/elemoine">GitHub</a></li>
+                            <li><a href="https://plus.google.com/u/1/101823398102994275785">Google+</a></li>
+                            <li><a href="https://www.linkedin.com/in/erilem">Linkedin</a></li>
+                        </ul>
+                </div><!-- /.social -->
+        </section><!-- /#extras -->
+
+        <footer id="contentinfo" class="body">
+                <address id="about" class="vcard body">
+                Proudly powered by <a href="http://getpelican.com/">Pelican</a>, which takes great advantage of <a href="http://python.org">Python</a>.
+                </address><!-- /#about -->
+
+                <p>The theme is by <a href="http://coding.smashingmagazine.com/2009/08/04/designing-a-html-5-layout-from-scratch/">Smashing Magazine</a>, thanks!</p>
+        </footer><!-- /#contentinfo -->
+
+<script type="text/javascript">
+    var disqus_shortname = 'erilem';
+    (function () {
+        var s = document.createElement('script'); s.async = true;
+        s.type = 'text/javascript';
+        s.src = 'https://' + disqus_shortname + '.disqus.com/count.js';
+        (document.getElementsByTagName('HEAD')[0] || document.getElementsByTagName('BODY')[0]).appendChild(s);
+    }());
+</script>
+</body>
+</html>

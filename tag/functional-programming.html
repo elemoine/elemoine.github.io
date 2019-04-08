@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+        <meta charset="utf-8" />
+        <title>Éric Lemoine - functional programming</title>
+        <link rel="stylesheet" href="https://erilem.net/theme/css/main.css" />
+        <link href="https://erilem.net/feeds/all.atom.xml" type="application/atom+xml" rel="alternate" title="Éric Lemoine Atom Feed" />
+</head>
+
+<body id="index" class="home">
+        <header id="banner" class="body">
+                <h1><a href="https://erilem.net/">Éric Lemoine </a></h1>
+                <nav><ul>
+                    <li><a href="https://erilem.net/cv/cv.en.html">Resume</a></li>
+                    <li><a href="https://erilem.net/pages/hacking.html">Hacking</a></li>
+                    <li><a href="https://erilem.net/category/blog.html">Blog</a></li>
+                </ul></nav>
+        </header><!-- /#banner -->
+
+            <aside id="featured" class="body">
+                <article>
+                    <h1 class="entry-title"><a href="https://erilem.net/y-combinator.html">Y Combinator</a></h1>
+<footer class="post-info">
+        <abbr class="published" title="2009-07-02T19:08:00+02:00">
+                Published: Thu 02 July 2009
+        </abbr>
+
+        <address class="vcard author">
+                By                         <a class="url fn" href="https://erilem.net/author/erilem.html">Erilem</a>
+        </address>
+<p>In <a href="https://erilem.net/category/blog.html">Blog</a>.</p>
+<p>tags: <a href="https://erilem.net/tag/functional-programming.html">functional programming</a> <a href="https://erilem.net/tag/python.html">python</a> </p>
+</footer><!-- /.post-info --><p>I've been reading &quot;The Little Schemer&quot; from Daniel P. Friedman and
+Matthias Felleisen. Very interesting reading.</p>
+<p>The nineth chapter introduces the Y Combinator function, a pretty
+interesting beast! Quoting <a class="reference external" href="http://www.crockford.com/javascript/little.html">Crockford</a>: &quot;one of the most strange and
+wonderful artifacts of Computer Science&quot;. As a primer, here's how the Y
+Combinator looks like (in Python):</p>
+<div class="highlight"><pre><span></span><span class="k">def</span> <span class="nf">Y</span><span class="p">(</span><span class="n">func</span><span class="p">):</span>
+    <span class="k">return</span> <span class="p">(</span><span class="k">lambda</span> <span class="n">f</span> <span class="p">:</span> <span class="n">f</span><span class="p">(</span><span class="n">f</span><span class="p">))(</span><span class="k">lambda</span> <span class="n">f</span> <span class="p">:</span> <span class="n">func</span><span class="p">(</span><span class="k">lambda</span> <span class="n">x</span> <span class="p">:</span> <span class="p">(</span><span class="n">f</span><span class="p">(</span><span class="n">f</span><span class="p">))(</span><span class="n">x</span><span class="p">)))</span>
+</pre></div>
+<p>Looks scary, doesn't it? (It did scare me when I first saw it at least.)</p>
+<p>The Y Combinator creates a recursive function from a non-recursive
+function that looks like the recursive function one wants to create. The
+Y Combinator can for example be used to obtain recursive functions from
+anonymous functions, which, with most programming languages, cannot be
+recursive.</p>
+<p>This blog post proposes defining the Y Combinator function in Python.</p>
+<p>Goal: find the function Y (the Y Combinator) such that:</p>
+<pre class="literal-block">
+fact = Y(like_fact)
+</pre>
+<p>where:</p>
+<ul class="simple">
+<li><tt class="docutils literal">fact</tt> is the factorial function</li>
+<li><tt class="docutils literal">like_fact</tt> is defined as follows:</li>
+</ul>
+<div class="highlight"><pre><span></span><span class="k">def</span> <span class="nf">like_fact</span><span class="p">(</span><span class="n">r</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">f</span><span class="p">(</span><span class="n">n</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">n</span> <span class="o">&lt;</span> <span class="mi">2</span><span class="p">:</span>
+            <span class="k">return</span> <span class="mi">1</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">n</span> <span class="o">*</span> <span class="n">r</span><span class="p">(</span><span class="n">n</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">f</span>
+</pre></div>
+<p>So <tt class="docutils literal">Y</tt> takes a non-recursive function (which can theoritically be expressed
+as an anonymous function) that looks like the recursive factorial function and
+returns the factorial function.</p>
+<p>You may have noticed thay our <tt class="docutils literal">like_fact</tt> function is not expresed as an
+anonymous function. This is because Python does not allow us to do it: the
+inner function <tt class="docutils literal">f</tt> cannot be defined with <tt class="docutils literal">lambda</tt> because it includes
+conditional statements, the outer function <tt class="docutils literal">like_fact</tt> cannot be defined with
+<tt class="docutils literal">lambda</tt> because it includes an inner function that isn't defined with
+<tt class="docutils literal">lambda</tt>.</p>
+<p>Using JavaScript the <tt class="docutils literal">like_fact</tt> function would be:</p>
+<div class="highlight"><pre><span></span><span class="kd">function</span><span class="p">(</span><span class="nx">r</span><span class="p">)</span> <span class="p">{</span>
+    <span class="k">return</span> <span class="kd">function</span><span class="p">(</span><span class="nx">n</span><span class="p">)</span> <span class="p">{</span>
+        <span class="k">return</span> <span class="nx">n</span> <span class="o">&lt;</span> <span class="mi">2</span> <span class="o">?</span> <span class="mi">1</span> <span class="o">:</span> <span class="nx">n</span> <span class="o">*</span> <span class="nx">r</span><span class="p">(</span><span class="nx">n</span> <span class="o">-</span> <span class="mi">1</span><span class="p">);</span>
+    <span class="p">};</span>
+<span class="p">}</span>
+</pre></div>
+<p>We start our demonstration from the following statement:</p>
+<div class="highlight"><pre><span></span><span class="n">fact</span> <span class="o">=</span> <span class="n">notlike_fact</span><span class="p">(</span><span class="n">notlike_fact</span><span class="p">)</span>
+</pre></div>
+<p>where <tt class="docutils literal">notlike_fact</tt> is:</p>
+<div class="highlight"><pre><span></span><span class="k">def</span> <span class="nf">notlike_fact</span><span class="p">(</span><span class="n">r</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">f</span><span class="p">(</span><span class="n">n</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">n</span> <span class="o">&lt;</span> <span class="mi">2</span><span class="p">:</span>
+            <span class="k">return</span> <span class="mi">1</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">n</span> <span class="o">*</span> <span class="p">(</span><span class="n">r</span><span class="p">(</span><span class="n">r</span><span class="p">))(</span><span class="n">n</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">f</span>
+</pre></div>
+<p>Now we rewrite the above statement using <tt class="docutils literal">lambda</tt>:</p>
+<div class="highlight"><pre><span></span><span class="n">fact</span> <span class="o">=</span> <span class="p">(</span><span class="k">lambda</span> <span class="n">f</span> <span class="p">:</span> <span class="n">f</span><span class="p">(</span><span class="n">f</span><span class="p">))(</span><span class="n">notlike_fact</span><span class="p">)</span>
+</pre></div>
+<p>Now we can extract <tt class="docutils literal">like_fact</tt> and rewrite the statement as (maybe the
+most difficult step):</p>
+<div class="highlight"><pre><span></span><span class="p">(</span><span class="k">lambda</span> <span class="n">f</span> <span class="p">:</span> <span class="n">f</span><span class="p">(</span><span class="n">f</span><span class="p">))</span> <span class="p">(</span><span class="k">lambda</span> <span class="n">f</span> <span class="p">:</span> <span class="n">like_fact</span><span class="p">(</span><span class="k">lambda</span> <span class="n">x</span> <span class="p">:</span> <span class="p">(</span><span class="n">f</span><span class="p">(</span><span class="n">f</span><span class="p">)(</span><span class="n">x</span><span class="p">)))</span>
+</pre></div>
+<p>We can now write the Y function:</p>
+<div class="highlight"><pre><span></span><span class="k">def</span> <span class="nf">Y</span><span class="p">(</span><span class="n">func</span><span class="p">):</span>
+    <span class="k">return</span> <span class="p">(</span><span class="k">lambda</span> <span class="n">f</span> <span class="p">:</span> <span class="n">f</span><span class="p">(</span><span class="n">f</span><span class="p">))(</span><span class="k">lambda</span> <span class="n">f</span> <span class="p">:</span> <span class="n">func</span><span class="p">(</span><span class="k">lambda</span> <span class="n">x</span> <span class="p">:</span> <span class="p">(</span><span class="n">f</span><span class="p">(</span><span class="n">f</span><span class="p">))(</span><span class="n">x</span><span class="p">)))</span>
+</pre></div>
+<p>And we have:</p>
+<div class="highlight"><pre><span></span><span class="n">fact</span> <span class="o">=</span> <span class="n">Y</span><span class="p">(</span><span class="n">like_fact</span><span class="p">)</span>
+<span class="k">assert</span> <span class="n">fact</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span>
+<span class="k">assert</span> <span class="n">fact</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span> <span class="o">==</span> <span class="mi">2</span>
+<span class="k">assert</span> <span class="n">fact</span><span class="p">(</span><span class="mi">3</span><span class="p">)</span> <span class="o">==</span> <span class="mi">6</span>
+<span class="k">assert</span> <span class="n">fact</span><span class="p">(</span><span class="mi">4</span><span class="p">)</span> <span class="o">==</span> <span class="mi">24</span>
+<span class="k">assert</span> <span class="n">fact</span><span class="p">(</span><span class="mi">5</span><span class="p">)</span> <span class="o">==</span> <span class="mi">120</span>
+</pre></div>
+<p>Cool, no?</p>
+<p>Obviously <tt class="docutils literal">Y</tt> applies to other recursive functions, as an example let's apply
+it to Fibonacci:</p>
+<div class="highlight"><pre><span></span><span class="k">def</span> <span class="nf">like_fibo</span><span class="p">(</span><span class="n">r</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">f</span><span class="p">(</span><span class="n">n</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">n</span> <span class="o">&lt;=</span> <span class="mi">2</span><span class="p">:</span>
+            <span class="k">return</span> <span class="mi">1</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">r</span><span class="p">(</span><span class="n">n</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span> <span class="o">+</span> <span class="n">r</span><span class="p">(</span><span class="n">n</span> <span class="o">-</span> <span class="mi">2</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">f</span>
+
+<span class="n">fibo</span> <span class="o">=</span> <span class="n">Y</span><span class="p">(</span><span class="n">like_fibo</span><span class="p">)</span>
+<span class="k">assert</span> <span class="n">fibo</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span>
+<span class="k">assert</span> <span class="n">fibo</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span>
+<span class="k">assert</span> <span class="n">fibo</span><span class="p">(</span><span class="mi">3</span><span class="p">)</span> <span class="o">==</span> <span class="mi">2</span>
+<span class="k">assert</span> <span class="n">fibo</span><span class="p">(</span><span class="mi">4</span><span class="p">)</span> <span class="o">==</span> <span class="mi">3</span>
+<span class="k">assert</span> <span class="n">fibo</span><span class="p">(</span><span class="mi">5</span><span class="p">)</span> <span class="o">==</span> <span class="mi">5</span>
+<span class="k">assert</span> <span class="n">fibo</span><span class="p">(</span><span class="mi">6</span><span class="p">)</span> <span class="o">==</span> <span class="mi">8</span>
+</pre></div>
+<p>There are <a href="https://erilem.net/y-combinator.html#disqus_thread">comments</a>.</p>                </article>
+            </aside><!-- /#featured -->
+        <section id="extras" class="body">
+                <div class="social">
+                        <h2>social</h2>
+                        <ul>
+                            <li><a href="https://erilem.net/feeds/all.atom.xml" type="application/atom+xml" rel="alternate">atom feed</a></li>
+
+                            <li><a href="httsp://twitter.com/erilem">Twitter</a></li>
+                            <li><a href="https://github.com/elemoine">GitHub</a></li>
+                            <li><a href="https://plus.google.com/u/1/101823398102994275785">Google+</a></li>
+                            <li><a href="https://www.linkedin.com/in/erilem">Linkedin</a></li>
+                        </ul>
+                </div><!-- /.social -->
+        </section><!-- /#extras -->
+
+        <footer id="contentinfo" class="body">
+                <address id="about" class="vcard body">
+                Proudly powered by <a href="http://getpelican.com/">Pelican</a>, which takes great advantage of <a href="http://python.org">Python</a>.
+                </address><!-- /#about -->
+
+                <p>The theme is by <a href="http://coding.smashingmagazine.com/2009/08/04/designing-a-html-5-layout-from-scratch/">Smashing Magazine</a>, thanks!</p>
+        </footer><!-- /#contentinfo -->
+
+<script type="text/javascript">
+    var disqus_shortname = 'erilem';
+    (function () {
+        var s = document.createElement('script'); s.async = true;
+        s.type = 'text/javascript';
+        s.src = 'https://' + disqus_shortname + '.disqus.com/count.js';
+        (document.getElementsByTagName('HEAD')[0] || document.getElementsByTagName('BODY')[0]).appendChild(s);
+    }());
+</script>
+</body>
+</html>

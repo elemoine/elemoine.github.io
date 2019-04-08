@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+        <meta charset="utf-8" />
+        <title>Additions to the MapFish Protocol</title>
+        <link rel="stylesheet" href="https://erilem.net/theme/css/main.css" />
+        <link href="https://erilem.net/feeds/all.atom.xml" type="application/atom+xml" rel="alternate" title="Éric Lemoine Atom Feed" />
+</head>
+
+<body id="index" class="home">
+        <header id="banner" class="body">
+                <h1><a href="https://erilem.net/">Éric Lemoine </a></h1>
+                <nav><ul>
+                    <li><a href="https://erilem.net/cv/cv.en.html">Resume</a></li>
+                    <li><a href="https://erilem.net/pages/hacking.html">Hacking</a></li>
+                    <li class="active"><a href="https://erilem.net/category/blog.html">Blog</a></li>
+                </ul></nav>
+        </header><!-- /#banner -->
+<section id="content" class="body">
+  <article>
+    <header>
+      <h1 class="entry-title">
+        <a href="https://erilem.net/additions-to-the-mapfish-protocol.html" rel="bookmark"
+           title="Permalink to Additions to the MapFish Protocol">Additions to the MapFish Protocol</a></h1>
+    </header>
+
+    <div class="entry-content">
+<footer class="post-info">
+        <abbr class="published" title="2009-04-18T21:55:00+02:00">
+                Published: Sat 18 April 2009
+        </abbr>
+
+        <address class="vcard author">
+                By                         <a class="url fn" href="https://erilem.net/author/erilem.html">Erilem</a>
+        </address>
+<p>In <a href="https://erilem.net/category/blog.html">Blog</a>.</p>
+
+</footer><!-- /.post-info -->      <p>We recently added new stuff to the MapFish Protocol.</p>
+<p>As a refresher, let's first take a look at what the MapFish Protocol had
+before the new additions.</p>
+<p>(Note that you'd need the <a class="reference external" href="https://addons.mozilla.org/fr/firefox/addon/10122">JSONovich</a> FireFox extension to see the
+output of the examples given below in your web browser.)</p>
+<p><strong>Geographic query params</strong></p>
+<ul class="simple">
+<li><tt class="docutils literal"><span class="pre">box={x1},{y1},{x2},{y2}</span></tt>: the features within the specified
+bounding box</li>
+<li><tt class="docutils literal"><span class="pre">geometry={geojson_string}</span></tt>: the features within the specified
+geometry</li>
+<li><tt class="docutils literal"><span class="pre">lon={lon}&amp;lat={lat}&amp;tolerance={tol}</span></tt>: the features within the
+specified tolerance of the specified lon/lat</li>
+</ul>
+</p><p>Examples:</p>
+<ul class="simple">
+<li><a class="reference external" href="http://demo.mapfish.org/mapfishsample/trunk/summits?box=6.2,45.6,6.3,45.7">http://demo.mapfish.org/mapfishsample/trunk/summits?box=6.2,45.6,6.3,45.7</a></li>
+<li><a class="reference external" href="http://demo.mapfish.org/mapfishsample/trunk/summits?geometry={&quot;type&quot;:&quot;Polygon&quot;,&quot;coordinates&quot;:[[[6.2,45.6],[6.3,45.6],[6.3,45.7],[6.2,45.7],[6.2,45.6]]]}">http://demo.mapfish.org/mapfishsample/trunk/summits?geometry={&quot;type&quot;:&quot;Polygon&quot;,&quot;coordinates&quot;:[[[6.2,45.6],[6.3,45.6],[6.3,45.7],[6.2,45.7],[6.2,45.6]]]}</a></li>
+<li><a class="reference external" href="http://demo.mapfish.org/mapfishsample/trunk/summits?lon=6.2&amp;lat=45.6&amp;tolerance=0.1">http://demo.mapfish.org/mapfishsample/trunk/summits?lon=6.2&amp;lat=45.6&amp;tolerance=0.1</a></li>
+</ul>
+</p><p><strong>Limiting and Sorting</strong></p>
+<ul class="simple">
+<li><tt class="docutils literal"><span class="pre">limit={num}</span></tt>: the maximum number of features returned</li>
+<li><tt class="docutils literal"><span class="pre">offset={num}</span></tt>: the number of features to skip</li>
+<li><tt class="docutils literal"><span class="pre">order_by={field_name}</span></tt>: the name of the field to use to order the
+features</li>
+<li><tt class="docutils literal">dir=ASC|DESC</tt>: the ordering direction</li>
+</ul>
+</p><p>Examples:</p>
+<ul class="simple">
+<li><a class="reference external" href="http://demo.mapfish.org/mapfishsample/trunk/summits?limit=10">http://demo.mapfish.org/mapfishsample/trunk/summits?limit=10</a></li>
+<li><a class="reference external" href="http://demo.mapfish.org/mapfishsample/trunk/summits?limit=10&amp;offset=2">http://demo.mapfish.org/mapfishsample/trunk/summits?limit=10&amp;offset=2</a></li>
+<li><a class="reference external" href="http://demo.mapfish.org/mapfishsample/trunk/summits?limit=10&amp;offset=2&amp;order_by=elevation">http://demo.mapfish.org/mapfishsample/trunk/summits?limit=10&amp;offset=2&amp;order_by=elevation</a></li>
+<li><a class="reference external" href="http://demo.mapfish.org/mapfishsample/trunk/summits?limit=10&amp;offset=2&amp;order_by=elevation&amp;dir=ASC">http://demo.mapfish.org/mapfishsample/trunk/summits?limit=10&amp;offset=2&amp;order_by=elevation&amp;dir=ASC</a></li>
+<li><a class="reference external" href="http://demo.mapfish.org/mapfishsample/trunk/summits?limit=10&amp;offset=2&amp;order_by=elevation&amp;dir=DESC">http://demo.mapfish.org/mapfishsample/trunk/summits?limit=10&amp;offset=2&amp;order_by=elevation&amp;dir=DESC</a></li>
+</ul>
+</p><p><strong>The new params</strong></p>
+<ul class="simple">
+<li><tt class="docutils literal">no_geom=true|false</tt>: so that the returned feature has no geometry
+(&quot;geometry&quot;: null)</li>
+<li><tt class="docutils literal"><span class="pre">attrs={field1}[,{field2},...]</span></tt>: to restrict the list of properties
+returned in the features</li>
+<li><tt class="docutils literal"><span class="pre">queryable={field1}[,{field2},...]</span></tt>: the names of the feature
+fields that can be queried</li>
+<li><tt class="docutils literal"><span class="pre">{field}__{query_op}={value}</span></tt>: filter expression, field must be in
+the list of fields specified by queryable, query_op is one of &quot;eq&quot;,
+&quot;ne&quot;, &quot;lt, &quot;le&quot;, &quot;gt&quot;, &quot;ge&quot;, &quot;like&quot;, &quot;ilike&quot;</li>
+</ul>
+</p><p>And now an example combining all the new parameters:</p>
+<ul class="simple">
+<li><a class="reference external" href="http://demo.mapfish.org/mapfishsample/trunk/summits?queryable=name,elevation&amp;name__ilike=col&amp;elevation__gte=3500&amp;attrs=name,elevation&amp;no_geom=true">http://demo.mapfish.org/mapfishsample/trunk/summits?queryable=name,elevation&amp;name__ilike=col&amp;elevation__gte=3500&amp;attrs=name,elevation&amp;no_geom=true</a></li>
+</ul>
+</p><p>The above query returns a GeoJSON representation of the summits whose
+names include &quot;col&quot; and whose elevations are greater than or equal to
+3500. The returned features have no geometry and their attributes
+include &quot;name&quot; and &quot;elevation&quot; only.</p>
+<p>Not including the geometry in the features makes the parsing in the
+browser much faster, so for cases where the geometries aren't needed
+this is a big win.</p>
+<p>Credits for the &quot;<tt class="docutils literal"><span class="pre">queryable={field}&amp;{field}__{query_op}={value}</span></tt>&quot;
+syntax goes to FeatureServer!</p>
+
+    </div><!-- /.entry-content -->
+    <div class="comments">
+      <h2>Comments !</h2>
+      <div id="disqus_thread"></div>
+      <script type="text/javascript">
+        var disqus_shortname = 'erilem';
+        var disqus_identifier = 'additions-to-the-mapfish-protocol.html';
+        var disqus_url = 'https://erilem.net/additions-to-the-mapfish-protocol.html';
+        (function() {
+        var dsq = document.createElement('script'); dsq.type = 'text/javascript'; dsq.async = true;
+        dsq.src = '//erilem.disqus.com/embed.js';
+        (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
+        })();
+      </script>
+      <noscript>Please enable JavaScript to view the comments.</noscript>
+    </div>
+
+  </article>
+</section>
+        <section id="extras" class="body">
+                <div class="social">
+                        <h2>social</h2>
+                        <ul>
+                            <li><a href="https://erilem.net/feeds/all.atom.xml" type="application/atom+xml" rel="alternate">atom feed</a></li>
+
+                            <li><a href="httsp://twitter.com/erilem">Twitter</a></li>
+                            <li><a href="https://github.com/elemoine">GitHub</a></li>
+                            <li><a href="https://plus.google.com/u/1/101823398102994275785">Google+</a></li>
+                            <li><a href="https://www.linkedin.com/in/erilem">Linkedin</a></li>
+                        </ul>
+                </div><!-- /.social -->
+        </section><!-- /#extras -->
+
+        <footer id="contentinfo" class="body">
+                <address id="about" class="vcard body">
+                Proudly powered by <a href="http://getpelican.com/">Pelican</a>, which takes great advantage of <a href="http://python.org">Python</a>.
+                </address><!-- /#about -->
+
+                <p>The theme is by <a href="http://coding.smashingmagazine.com/2009/08/04/designing-a-html-5-layout-from-scratch/">Smashing Magazine</a>, thanks!</p>
+        </footer><!-- /#contentinfo -->
+
+<script type="text/javascript">
+    var disqus_shortname = 'erilem';
+    (function () {
+        var s = document.createElement('script'); s.async = true;
+        s.type = 'text/javascript';
+        s.src = 'https://' + disqus_shortname + '.disqus.com/count.js';
+        (document.getElementsByTagName('HEAD')[0] || document.getElementsByTagName('BODY')[0]).appendChild(s);
+    }());
+</script>
+</body>
+</html>

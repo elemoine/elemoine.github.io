@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+        <meta charset="utf-8" />
+        <title>Hacking</title>
+        <link rel="stylesheet" href="https://erilem.net/theme/css/main.css" />
+        <link href="https://erilem.net/feeds/all.atom.xml" type="application/atom+xml" rel="alternate" title="Éric Lemoine Atom Feed" />
+</head>
+
+<body id="index" class="home">
+        <header id="banner" class="body">
+                <h1><a href="https://erilem.net/">Éric Lemoine </a></h1>
+                <nav><ul>
+                    <li><a href="https://erilem.net/cv/cv.en.html">Resume</a></li>
+                    <li class="active"><a href="https://erilem.net/pages/hacking.html">Hacking</a></li>
+                    <li><a href="https://erilem.net/category/blog.html">Blog</a></li>
+                </ul></nav>
+        </header><!-- /#banner -->
+<section id="content" class="body">
+    <h1 class="entry-title">Hacking</h1>
+    
+    <p>Some of the open-source stuff I've worked on.</p>
+<div class="section" id="sungem">
+<h2>Sungem</h2>
+<p>For my Phd I developed a thread-based networking subsystem for Linux. I also
+developed drivers and firmware for Myricom/Myrinet network devices. After my
+Phd, I worked on the Sungem network interface driver (Sungem was the network
+interface of the iBook G3 I was using at that time). I added <a class="reference external" href="http://en.wikipedia.org/wiki/New_API">NAPI</a> and NETPOLL support to the driver.
+I must confess that I'm happy to see that the <a class="reference external" href="https://github.com/torvalds/linux/blob/master/drivers/net/ethernet/sun/sungem.c">sungem driver</a>
+is still in Linux, and that I still have my name listed in the file!</p>
+</div>
+<div class="section" id="openlayers">
+<h2>OpenLayers</h2>
+<p><a class="reference external" href="http://www.openlayers.org">OpenLayers</a> is a JavaScript library for adding
+<em>slippy</em> maps to web pages. This is an open-source alternative to the Google
+Maps API. I'm a core developer of OpenLayers. I've contributed many bug fixes,
+and enhancements, and introduced a number of new features. In particular,
+I actively worked on <a class="reference external" href="http://openlayers.org/blog/2008/04/15/vector-behavior/">Vector Behavior</a>, which, I think, is
+one of the coolest pieces of OpenLayers.</p>
+<p>I'm currently working on OpenLayers 3, One of the goals of OpenLayers 3 is
+exploring using WebGL for creating <em>3D maps</em>. My <a class="reference external" href="http://openlayers.org/blog/2012/11/14/why-are-we-building-openlayers-3/">&quot;Why are we building
+OpenLayers 3&quot; blog post</a>
+provides more information on OpenLayers 3.</p>
+</div>
+<div class="section" id="geoext">
+<h2>GeoExt</h2>
+<p><a class="reference external" href="http://www.geoext.org">GeoExt</a> is a JavaScript library that brings
+OpenLayers and <a class="reference external" href="http://www.sencha.com/products/js/">ExtJS</a> together. Its goal
+is to help build desktop-style GIS applications for the web with JavaScript.
+I participated in the creation of the project in 2008, and I've been a core
+developer of the library since then. I've contributed lots of features,
+enhancements and bug fixes. I, for example, created <tt class="docutils literal">GeoExt.Action</tt>, for
+coupling OpenLayers controls and Ext buttons or menu items, and had a lot of
+fun with it.</p>
+</div>
+<div class="section" id="geoalchemy">
+<h2>GeoAlchemy</h2>
+<p><a class="reference external" href="http://www.geoalchemy.org">GeoAlchemy</a> extends <a class="reference external" href="http://www.sqlalchemy.org">SQLAlchemy</a> with geospatial features.  GeoAlchemy is
+wonderful! And one of the reasons it's wonderful is because SQLAlchemy is
+wonderful. I mentored the talented <a class="reference external" href="http://twitter.com/tsauerwein">Tobias Sauerwein</a> in his work on GeoAlchemy, and contributed
+a number of enhancements and fixes.</p>
+<p>I've recently started working on <a class="reference external" href="https://groups.google.com/forum/#!topic/geoalchemy/-xHBYZCUaDk">GeoAlchemy
+2</a>.
+GeoAlchemy 2 aims to provide a simpler implementation and improved APIs.</p>
+</div>
+<div class="section" id="mapfish">
+<h2>MapFish</h2>
+<p><a class="reference external" href="http://www.mapfish.org">MapFish</a> extends the <a class="reference external" href="http://pylonshq.com">Pylons</a>
+web framework with geospatial functionality. In addition to Pylons, MapFish is
+based on GeoAlchemy, and the Shapely, and geojson packages from <a class="reference external" href="http://sgillies.net">Sean Gillies'</a> <a class="reference external" href="http://trac.gispython.org/lab">GIS-Python Lab</a>. I'm
+one of the creators and main developers of MapFish.  Working on MapFish has
+made me discover the Pylons framework, and its ecosystem. I even had the
+chance to contribute a <a class="reference external" href="http://pylonshq.com/project/pylonshq/ticket/632">patch</a> to Pylons.</p>
+</div>
+<div class="section" id="gtranslate">
+<h2>gTranslate</h2>
+<p><a class="reference external" href="https://addons.mozilla.org/en-US/firefox/addon/918/">gTranslate</a> is
+a FireFox add-on for translating text in web pages with the Google translation
+services.  I discovered gTranslate while learning about the development of
+FireFox add-ons. I refactored the code, set up the test harness, and wrote unit
+tests.</p>
+</div>
+
+</section>
+        <section id="extras" class="body">
+                <div class="social">
+                        <h2>social</h2>
+                        <ul>
+                            <li><a href="https://erilem.net/feeds/all.atom.xml" type="application/atom+xml" rel="alternate">atom feed</a></li>
+
+                            <li><a href="httsp://twitter.com/erilem">Twitter</a></li>
+                            <li><a href="https://github.com/elemoine">GitHub</a></li>
+                            <li><a href="https://plus.google.com/u/1/101823398102994275785">Google+</a></li>
+                            <li><a href="https://www.linkedin.com/in/erilem">Linkedin</a></li>
+                        </ul>
+                </div><!-- /.social -->
+        </section><!-- /#extras -->
+
+        <footer id="contentinfo" class="body">
+                <address id="about" class="vcard body">
+                Proudly powered by <a href="http://getpelican.com/">Pelican</a>, which takes great advantage of <a href="http://python.org">Python</a>.
+                </address><!-- /#about -->
+
+                <p>The theme is by <a href="http://coding.smashingmagazine.com/2009/08/04/designing-a-html-5-layout-from-scratch/">Smashing Magazine</a>, thanks!</p>
+        </footer><!-- /#contentinfo -->
+
+<script type="text/javascript">
+    var disqus_shortname = 'erilem';
+    (function () {
+        var s = document.createElement('script'); s.async = true;
+        s.type = 'text/javascript';
+        s.src = 'https://' + disqus_shortname + '.disqus.com/count.js';
+        (document.getElementsByTagName('HEAD')[0] || document.getElementsByTagName('BODY')[0]).appendChild(s);
+    }());
+</script>
+</body>
+</html>
